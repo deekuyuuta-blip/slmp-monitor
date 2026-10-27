@@ -19,8 +19,13 @@ R04CPU ──(シンプルCPU通信／SLMP 3E・TCP)──▶ Wi-Fi ──▶ �
 
 ## スマホ側
 1. PLCと同じネットワークのWi-Fiにつなぐ。**IPアドレスは固定**にする（Wi-Fi詳細設定で静的IP、またはルータでDHCP予約）
-2. アプリで待受ポート（例：5000）を入れて「開始」
-3. 画面上部に表示される「このスマホのIP」を、PLC側の交信先IPに設定する
+2. 「⚙ 設定」を開いて設定し「保存」
+   - PLCのIPアドレス：入力すると、そのIPからの接続だけ受け付ける（空欄なら制限なし）。スマホと別ネットワークなら警告を表示
+   - 待受ポート番号：シンプルCPU通信設定の交信先ポートと同じにする（例：5000）
+   - ハートビート デバイス：1秒ごとに+1するデバイス（空欄でなし）
+   - 通信なし判定（秒）：この秒数PLCから要求がなければ「通信なし」表示
+   - アプリ起動時に自動で待受を開始
+3. 「待受開始」を押す。設定画面とメイン画面に出る「このスマホのIP」を、PLC側の交信先IPに設定する
 4. 「＋ 追加」で、シンプルCPU通信設定の交信先デバイスと同じ番号を登録する
    - PLCが書込んでくる範囲 → 「スマホ → PLC」のチェックなし
    - PLCが読出しに来る範囲 → 「スマホ → PLC」にチェック
@@ -49,6 +54,11 @@ R04CPU ──(シンプルCPU通信／SLMP 3E・TCP)──▶ Wi-Fi ──▶ �
 - [シンプルCPU通信機能（三菱電機 おすすめ機能紹介PDF）](https://www.mitsubishielectric.co.jp/fa/solutions/tips/assets/pdf/simplecpu.pdf) — 交信先にSLMP対応機器（QnA互換3Eフレーム）、MODBUS/TCP機器、他社PLCが使えること
 - [MELSEC iQ-R ネットワーク特長（Ethernet）](https://www.mitsubishielectric.com/fa/id_en/products/cnt/plcr/pmerit/network/ethernet.html) — パラメータ登録だけでデータ交換できること
 - [MELSEC iQ-F 新製品ニュース（シンプルCPU通信の交信先にSLMP対応機器）](https://dl.mitsubishielectric.co.jp/dl/fa/document/catalog/plcf/l08854/l08854-a.pdf)
+## 更新について
+APKは毎回同じ鍵（`app/slmp-monitor.keystore`）で署名するので、新しい版を上書きインストールできます。
+最初の版（1.0）だけは鍵が違うため、1.1を入れる前に一度アンインストールしてください。
+この鍵はリポジトリに公開しています（個人利用アプリのための簡易運用）。
+
 ## ビルド
 GitHubにpushすると GitHub Actions がAPKをビルドし、リリース「latest」に `slmp-monitor.apk` を置きます。スマホのブラウザでそのページを開いてダウンロード・インストールしてください（初回は「提供元不明のアプリ」の許可が必要）。
 

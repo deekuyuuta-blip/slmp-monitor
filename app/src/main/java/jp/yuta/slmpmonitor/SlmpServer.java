@@ -47,9 +47,26 @@ public final class SlmpServer {
     public final AtomicLong requestCount = new AtomicLong();
     public volatile long lastRequestMillis;   // System.currentTimeMillis()
 
-    public SlmpServer(DeviceMemory mem, int port) {
+    private final String allowedIp;
+
+    /** allowedIp が空でなければ、そのIPからの接続だけ受け付ける */
+    public SlmpServer(DeviceMemory mem, int port, String allowedIp) {
         this.mem = mem;
         this.port = port;
+        this.allowedIp = allowedIp == null ? "" : allowedIp.trim();
+    }
+
+    public SlmpServer(DeviceMemory mem, int port) {
+        this(mem, port, "");
+    }
+
+    /** 接続中の相手IP一覧 */
+    public List<String> clientIps() {
+        List<String> l = new ArrayList<>();
+        synchronized (clients) {
+            for (Socket s : clients) l.add(s.getInetAddress().getHostAddress());
+        }
+        return l;
     }
 
     public void start() throws IOException {
@@ -58,7 +75,7 @@ public final class SlmpServer {
         ss.bind(new InetSocketAddress(port));
         server = ss;
         running = true;
-        addLog("ポート " + port + " で待受開始");
+        addLog("ポート " + port + " で待受開始" + (allowedIp.isEmpty() ? "（接続元の制限なし）" : "（許可: " + allowedIp + "）"));
         Thread t = new Thread(this::acceptLoop, "slmp-accept");
         t.setDaemon(true);
         t.start();
@@ -116,6 +133,15 @@ public final class SlmpServer {
         while (running) {
             try {
                 Socket s = server.accept();
+                String ip = s.getInetAddress().getHostAddress();
+                if (!allowedIp.isEmpty() && !allowedIp.equals(ip)) {
+                    addLog("接続拒否 " + ip + "（設定のPLC IP " + allowedIp + " と不一致）");
+                    try {
+                        s.close();
+                    } catch (IOException ignored) {
+                    }
+                    continue;
+                }
                 s.setTcpNoDelay(true);
                 clients.add(s);
                 addLog("PLC接続 " + s.getInetAddress().getHostAddress());

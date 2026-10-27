@@ -2,6 +2,7 @@ package jp.yuta.slmpmonitor;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -25,9 +26,6 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.net.Inet4Address;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -42,8 +40,8 @@ public class MainActivity extends Activity {
     private static final int COLOR_GRAY = 0xFF9E9E9E;
     private static final int COLOR_ERR = 0xFFC62828;
     private static final int COLOR_VALUE = 0xFF1565C0;
-    private static final long STALE_MS = 3000;   // これ以上PLCから要求がなければ「通信なし」
-    private static final int MENU_LOG = 1, MENU_HEARTBEAT = 2, MENU_HELP = 3;
+    private static final int MENU_LOG = 1, MENU_SETTINGS = 2, MENU_HELP = 3;
+    private static final int REQ_SETTINGS = 10;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final DeviceMemory mem = new DeviceMemory();
@@ -52,8 +50,9 @@ public class MainActivity extends Activity {
     private final List<MonitorItem> items = new ArrayList<>();
     private final List<Row> rows = new ArrayList<>();
 
-    private EditText portEdit;
     private Button startBtn;
+    private int serverPort;
+    private String serverPlcIp = "";
     private TextView ipText, statusText;
     private Switch unlockSwitch;
     private LinearLayout listLayout;
@@ -102,23 +101,19 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(12), dp(8), dp(12), dp(8));
 
-        // 待受ポート・開始ボタン
+        // 開始ボタン・設定ボタン
         LinearLayout r1 = hRow();
-        TextView pl = new TextView(this);
-        pl.setText("待受ポート");
-        r1.addView(pl);
-        portEdit = new EditText(this);
-        portEdit.setSingleLine(true);
-        portEdit.setInputType(InputType.TYPE_CLASS_NUMBER);
-        portEdit.setText(String.valueOf(store.port()));
-        r1.addView(portEdit, new LinearLayout.LayoutParams(dp(90), -2));
         startBtn = new Button(this);
-        startBtn.setText("開始");
+        startBtn.setText("待受開始");
         startBtn.setOnClickListener(v -> {
             if (server != null) stopServer();
             else startServer();
         });
         r1.addView(startBtn, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button settings = new Button(this);
+        settings.setText("⚙ 設定");
+        settings.setOnClickListener(v -> openSettings());
+        r1.addView(settings);
         root.addView(r1);
 
         ipText = new TextView(this);
@@ -250,17 +245,10 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------ サーバ
 
     private void startServer() {
-        final int port;
-        try {
-            port = Integer.parseInt(portEdit.getText().toString().trim());
-            if (port < 1024 || port > 65535) throw new NumberFormatException();
-        } catch (NumberFormatException e) {
-            toast("ポート番号は1024〜65535で入力してください");
-            return;
-        }
-        store.savePort(port);
+        final int port = store.port();
+        final String plcIp = store.plcIp();
         startBtn.setEnabled(false);
-        final SlmpServer s = new SlmpServer(mem, port);
+        final SlmpServer s = new SlmpServer(mem, port, plcIp);
         new Thread(() -> {
             String err = null;
             try {
@@ -272,7 +260,7 @@ public class MainActivity extends Activity {
             main.post(() -> {
                 startBtn.setEnabled(true);
                 if (error != null) {
-                    toast("待受を開始できません: " + error);
+                    toast("待受を開始できません（ポート " + port + "）: " + error);
                     return;
                 }
                 if (isFinishing()) {
@@ -280,9 +268,9 @@ public class MainActivity extends Activity {
                     return;
                 }
                 server = s;
-                store.saveAutoStart(true);
-                startBtn.setText("停止");
-                portEdit.setEnabled(false);
+                serverPort = port;
+                serverPlcIp = plcIp;
+                startBtn.setText("待受停止");
                 getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 updateIpText();
                 refreshButtons();
@@ -294,13 +282,33 @@ public class MainActivity extends Activity {
         final SlmpServer s = server;
         server = null;
         if (s != null) new Thread(s::stop).start();
-        store.saveAutoStart(false);
-        startBtn.setText("開始");
-        portEdit.setEnabled(true);
+        startBtn.setText("待受開始");
         unlockSwitch.setChecked(false);
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         refreshButtons();
         updateStatusAndValues();
+    }
+
+    private void openSettings() {
+        startActivityForResult(new Intent(this, SettingsActivity.class), REQ_SETTINGS);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_SETTINGS || resultCode != RESULT_OK) return;
+        updateIpText();
+        // 待受中にポートやPLC IPが変わったら、待受をやり直す
+        if (server != null && (serverPort != store.port() || !serverPlcIp.equals(store.plcIp()))) {
+            final SlmpServer old = server;
+            server = null;
+            startBtn.setEnabled(false);
+            new Thread(() -> {
+                old.stop();
+                main.post(this::startServer);
+            }).start();
+            toast("新しい設定で待受をやり直します");
+        }
     }
 
     private void updateStatusAndValues() {
@@ -310,14 +318,15 @@ public class MainActivity extends Activity {
         } else {
             long last = server.lastRequestMillis;
             long age = System.currentTimeMillis() - last;
-            int n = server.clientCount();
+            List<String> peers = server.clientIps();
+            String who = peers.isEmpty() ? "PLC未接続" : "PLC " + android.text.TextUtils.join(", ", peers);
             if (last == 0) {
-                setStatus("PLCからの接続待ち（接続 " + n + "）", COLOR_GRAY);
-            } else if (age > STALE_MS) {
-                setStatus("PLCから通信なし " + (age / 1000) + "秒（接続 " + n + "）", COLOR_ERR);
+                setStatus("PLCからの接続待ち（" + who + "）", COLOR_GRAY);
+            } else if (age > store.staleSec() * 1000L) {
+                setStatus("PLCから通信なし " + (age / 1000) + "秒（" + who + "）", COLOR_ERR);
             } else {
                 fresh = true;
-                setStatus("通信中  接続 " + n + " ／ 受信 " + server.requestCount.get() + "回", COLOR_ON);
+                setStatus("通信中  " + who + " ／ 受信 " + server.requestCount.get() + "回", COLOR_ON);
             }
         }
         for (Row r : rows) {
@@ -357,20 +366,11 @@ public class MainActivity extends Activity {
     }
 
     private void updateIpText() {
-        List<String> ips = new ArrayList<>();
-        try {
-            for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
-                if (!ni.isUp() || ni.isLoopback()) continue;
-                for (InetAddress a : Collections.list(ni.getInetAddresses())) {
-                    if (a instanceof Inet4Address && !a.isLoopbackAddress()) {
-                        ips.add(a.getHostAddress() + (ni.getName().startsWith("wlan") ? "（Wi-Fi）" : ""));
-                    }
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        ipText.setText("このスマホのIP: " + (ips.isEmpty() ? "取得できません" : android.text.TextUtils.join(", ", ips))
-                + "\n→ PLCのシンプルCPU通信の交信先に設定");
+        String plc = store.plcIp();
+        String warn = (!plc.isEmpty() && !NetUtil.sameSubnet24(plc)) ? "\n※ スマホと別のネットワークのようです" : "";
+        ipText.setText("PLC: " + (plc.isEmpty() ? "未設定（接続元を制限しない）" : plc)
+                + "　待受ポート: " + store.port()
+                + "\nこのスマホのIP: " + NetUtil.phoneIps() + warn);
     }
 
     // ------------------------------------------------------------ スマホ→PLC の値を変更
@@ -528,7 +528,7 @@ public class MainActivity extends Activity {
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         menu.add(0, MENU_LOG, 0, "通信ログ");
-        menu.add(0, MENU_HEARTBEAT, 1, "ハートビート");
+        menu.add(0, MENU_SETTINGS, 1, "設定");
         menu.add(0, MENU_HELP, 2, "使い方");
         return true;
     }
@@ -540,14 +540,14 @@ public class MainActivity extends Activity {
             showLog();
             return true;
         }
-        if (id == MENU_HEARTBEAT) {
-            showHeartbeatDialog();
+        if (id == MENU_SETTINGS) {
+            openSettings();
             return true;
         }
         if (id == MENU_HELP) {
             new AlertDialog.Builder(this).setTitle("使い方")
                     .setMessage("1. スマホをPLCと同じネットワークのWi-Fiにつなぐ（IPは固定がおすすめ）\n"
-                            + "2. 「開始」で待受を始める\n"
+                            + "2. 「⚙ 設定」でPLCのIPと待受ポートを入れ、「待受開始」\n"
                             + "3. GX Works3のシンプルCPU通信設定で、交信先を「SLMP対応機器」、IPをこのスマホ、ポートを待受ポートにする\n"
                             + "4. PLC→スマホは「書込み」、スマホ→PLCは「読出し」の交信パターンで設定\n"
                             + "5. このアプリで同じデバイス番号を登録する\n\n"
@@ -570,39 +570,6 @@ public class MainActivity extends Activity {
         sv.addView(t);
         new AlertDialog.Builder(this).setTitle("通信ログ（新しい順）").setView(sv)
                 .setPositiveButton("閉じる", null).show();
-    }
-
-    private void showHeartbeatDialog() {
-        final EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setHint("例: D199（空欄でなし）");
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
-        input.setText(store.heartbeat());
-        LinearLayout box = new LinearLayout(this);
-        box.setPadding(dp(20), dp(8), dp(20), 0);
-        box.addView(input, new LinearLayout.LayoutParams(-1, -2));
-        final AlertDialog d = new AlertDialog.Builder(this)
-                .setTitle("ハートビート")
-                .setMessage("指定したデバイスを1秒ごとに+1します（ビットなら反転）。\n"
-                        + "PLCで読出して値が変わらなくなったら、スマホ側の停止とみなしてください。")
-                .setView(box)
-                .setPositiveButton("保存", null)
-                .setNegativeButton("キャンセル", null)
-                .create();
-        d.setOnShowListener(x -> d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String s = input.getText().toString().trim();
-            if (!s.isEmpty()) {
-                try {
-                    s = Device.parse(s).toString();
-                } catch (IllegalArgumentException e) {
-                    input.setError(e.getMessage());
-                    return;
-                }
-            }
-            store.saveHeartbeat(s);
-            d.dismiss();
-        }));
-        d.show();
     }
 
     // ------------------------------------------------------------ ライフサイクル

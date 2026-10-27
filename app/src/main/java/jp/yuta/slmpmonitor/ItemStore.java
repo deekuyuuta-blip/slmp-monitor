@@ -20,6 +20,14 @@ final class ItemStore {
     int port() { return prefs.getInt("port", 5000); }
     void savePort(int port) { prefs.edit().putInt("port", port).apply(); }
 
+    /** PLCのIPアドレス。空文字なら接続元を制限しない */
+    String plcIp() { return prefs.getString("plcIp", ""); }
+    void savePlcIp(String ip) { prefs.edit().putString("plcIp", ip).apply(); }
+
+    /** この秒数PLCから要求がなければ「通信なし」 */
+    int staleSec() { return prefs.getInt("staleSec", 3); }
+    void saveStaleSec(int s) { prefs.edit().putInt("staleSec", s).apply(); }
+
     /** 空文字ならハートビートなし */
     String heartbeat() { return prefs.getString("heartbeat", ""); }
     void saveHeartbeat(String dev) { prefs.edit().putString("heartbeat", dev).apply(); }
