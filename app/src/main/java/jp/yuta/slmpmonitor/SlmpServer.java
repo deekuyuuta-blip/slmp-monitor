@@ -1,0 +1,281 @@
+package jp.yuta.slmpmonitor;
+
+import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.text.SimpleDateFormat;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * SLMP対応機器（QnA互換3Eフレーム・バイナリ・TCP）として待ち受けるサーバ。
+ * R04CPU等のシンプルCPU通信から来る一括読出し(0401)／一括書込み(1401)に応答する。
+ * サブコマンド 0000/0001（Q互換）と 0002/0003（iQ-R形式）に対応。
+ */
+public final class SlmpServer {
+
+    private static final int MAX_WORDS = 960;
+    private static final int MAX_BITS = 7168;
+    private static final int END_OK = 0x0000;
+    private static final int END_RANGE = 0xC056;     // デバイス範囲外・未対応デバイス
+    private static final int END_COMMAND = 0xC059;   // 未対応コマンド/サブコマンド
+    private static final int END_LENGTH = 0xC061;    // データ長不一致
+
+    private final DeviceMemory mem;
+    private final int port;
+    private final Set<Socket> clients = Collections.synchronizedSet(new HashSet<>());
+    private final ArrayDeque<String> log = new ArrayDeque<>();
+    private String lastLogBody;
+    private int lastLogRepeat;
+
+    private volatile ServerSocket server;
+    private volatile boolean running;
+
+    public final AtomicLong requestCount = new AtomicLong();
+    public volatile long lastRequestMillis;   // System.currentTimeMillis()
+
+    public SlmpServer(DeviceMemory mem, int port) {
+        this.mem = mem;
+        this.port = port;
+    }
+
+    public void start() throws IOException {
+        ServerSocket ss = new ServerSocket();
+        ss.setReuseAddress(true);
+        ss.bind(new InetSocketAddress(port));
+        server = ss;
+        running = true;
+        addLog("ポート " + port + " で待受開始");
+        Thread t = new Thread(this::acceptLoop, "slmp-accept");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    public void stop() {
+        running = false;
+        try {
+            if (server != null) server.close();
+        } catch (IOException ignored) {
+        }
+        synchronized (clients) {
+            for (Socket s : clients) {
+                try {
+                    s.close();
+                } catch (IOException ignored) {
+                }
+            }
+            clients.clear();
+        }
+        addLog("待受停止");
+    }
+
+    public boolean isRunning() {
+        return running;
+    }
+
+    public int clientCount() {
+        return clients.size();
+    }
+
+    // ---- ログ（同じ内容が続くときはまとめる） ----
+
+    private synchronized void addLog(String body) {
+        String time = new SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(new Date());
+        if (body.equals(lastLogBody) && !log.isEmpty()) {
+            lastLogRepeat++;
+            log.pollLast();
+            log.addLast(time + " " + body + "  ×" + lastLogRepeat);
+            return;
+        }
+        lastLogBody = body;
+        lastLogRepeat = 1;
+        log.addLast(time + " " + body);
+        while (log.size() > 200) log.pollFirst();
+    }
+
+    public synchronized List<String> logLines() {
+        return new ArrayList<>(log);
+    }
+
+    // ---- 接続処理 ----
+
+    private void acceptLoop() {
+        while (running) {
+            try {
+                Socket s = server.accept();
+                s.setTcpNoDelay(true);
+                clients.add(s);
+                addLog("PLC接続 " + s.getInetAddress().getHostAddress());
+                Thread t = new Thread(() -> serve(s), "slmp-client");
+                t.setDaemon(true);
+                t.start();
+            } catch (IOException e) {
+                if (running) addLog("待受エラー: " + e.getMessage());
+            }
+        }
+    }
+
+    private void serve(Socket s) {
+        String peer = s.getInetAddress().getHostAddress();
+        try {
+            InputStream in = new BufferedInputStream(s.getInputStream());
+            OutputStream out = s.getOutputStream();
+            while (running) {
+                byte[] h = readFully(in, 9, true);
+                if (h == null) break;   // 相手が切断
+                if ((h[0] & 0xFF) != 0x50 || h[1] != 0x00) {
+                    addLog(peer + " 3Eフレーム以外を受信（交信データコードがバイナリか確認）");
+                    break;
+                }
+                int len = u16(h, 7);
+                byte[] body = readFully(in, len, false);
+                out.write(handle(peer, h, body));
+                out.flush();
+            }
+        } catch (IOException e) {
+            if (running) addLog(peer + " 通信エラー: " + e.getMessage());
+        } finally {
+            clients.remove(s);
+            try {
+                s.close();
+            } catch (IOException ignored) {
+            }
+            if (running) addLog("PLC切断 " + peer);
+        }
+    }
+
+    /** 1要求を処理して応答フレームを返す（テストから直接呼べるよう公開） */
+    public byte[] handle(String peer, byte[] h, byte[] body) {
+        requestCount.incrementAndGet();
+        lastRequestMillis = System.currentTimeMillis();
+        if (body.length < 6) return response(h, END_LENGTH, null, 0, 0);
+        int cmd = u16(body, 2);
+        int sub = u16(body, 4);
+        boolean iqr = sub == 0x0002 || sub == 0x0003;
+        boolean bitUnit = sub == 0x0001 || sub == 0x0003;
+        if ((cmd != 0x0401 && cmd != 0x1401) || sub > 0x0003) {
+            addLog(String.format(Locale.ROOT, "%s 未対応コマンド %04X/%04X", peer, cmd, sub));
+            return response(h, END_COMMAND, null, cmd, sub);
+        }
+        int headLen = iqr ? 8 : 6;
+        if (body.length < 6 + headLen) return response(h, END_LENGTH, null, cmd, sub);
+        int p = 6;
+        int no = iqr ? (int) u32(body, p) : ((body[p] & 0xFF) | ((body[p + 1] & 0xFF) << 8) | ((body[p + 2] & 0xFF) << 16));
+        int code = iqr ? u16(body, p + 4) : (body[p + 3] & 0xFF);
+        int points = u16(body, p + headLen - 2);
+        int dataStart = 6 + headLen;
+        String dev = Device.name(code, no);
+        boolean write = cmd == 0x1401;
+
+        Boolean isBit = Device.isBitCode(code);
+        if (isBit == null || points < 1 || points > (bitUnit ? MAX_BITS : MAX_WORDS) || no < 0) {
+            addLog(peer + " 範囲外 " + dev + " " + points + "点");
+            return response(h, END_RANGE, null, cmd, sub);
+        }
+        if (bitUnit && !isBit) {
+            addLog(peer + " ワードデバイスへのビット単位アクセス " + dev);
+            return response(h, END_RANGE, null, cmd, sub);
+        }
+
+        try {
+            if (!write) {
+                byte[] data;
+                if (bitUnit) {
+                    boolean[] v = mem.readBits(code, no, points);
+                    data = new byte[(points + 1) / 2];
+                    for (int i = 0; i < points; i++) if (v[i]) data[i / 2] |= (byte) (i % 2 == 0 ? 0x10 : 0x01);
+                } else {
+                    short[] v = mem.readWords(code, no, points);
+                    data = new byte[points * 2];
+                    for (int i = 0; i < points; i++) {
+                        data[i * 2] = (byte) v[i];
+                        data[i * 2 + 1] = (byte) (v[i] >> 8);
+                    }
+                }
+                addLog(peer + " 読出 " + dev + " " + points + (bitUnit ? "点(ビット)" : "ワード"));
+                return response(h, END_OK, data, cmd, sub);
+            } else {
+                int need = bitUnit ? (points + 1) / 2 : points * 2;
+                if (body.length != dataStart + need) {
+                    addLog(peer + " 書込データ長不一致 " + dev);
+                    return response(h, END_LENGTH, null, cmd, sub);
+                }
+                if (bitUnit) {
+                    boolean[] v = new boolean[points];
+                    for (int i = 0; i < points; i++) {
+                        int b = body[dataStart + i / 2] & 0xFF;
+                        v[i] = ((i % 2 == 0) ? (b >> 4) : (b & 0x0F)) != 0;
+                    }
+                    mem.writeBits(code, no, v);
+                } else {
+                    short[] v = new short[points];
+                    for (int i = 0; i < points; i++) v[i] = (short) u16(body, dataStart + i * 2);
+                    mem.writeWords(code, no, v);
+                }
+                addLog(peer + " 書込 " + dev + " " + points + (bitUnit ? "点(ビット)" : "ワード"));
+                return response(h, END_OK, null, cmd, sub);
+            }
+        } catch (IllegalArgumentException e) {
+            addLog(peer + " " + e.getMessage() + " " + dev);
+            return response(h, END_RANGE, null, cmd, sub);
+        }
+    }
+
+    /** 応答: D0 00 + 要求と同じ ネットワーク/PC/I/O/局番 + データ長 + 終了コード + データ */
+    private static byte[] response(byte[] h, int end, byte[] data, int cmd, int sub) {
+        ByteArrayOutputStream b = new ByteArrayOutputStream();
+        b.write(0xD0);
+        b.write(0x00);
+        b.write(h, 2, 5);
+        byte[] payload;
+        if (end == END_OK) {
+            payload = data == null ? new byte[0] : data;
+        } else {
+            // 異常時：エラー情報（要求元のネットワーク/PC/I/O/局番 + コマンド + サブコマンド）
+            payload = new byte[]{h[2], h[3], h[4], h[5], h[6],
+                    (byte) cmd, (byte) (cmd >> 8), (byte) sub, (byte) (sub >> 8)};
+        }
+        int len = 2 + payload.length;
+        b.write(len & 0xFF);
+        b.write((len >> 8) & 0xFF);
+        b.write(end & 0xFF);
+        b.write((end >> 8) & 0xFF);
+        b.write(payload, 0, payload.length);
+        return b.toByteArray();
+    }
+
+    private static byte[] readFully(InputStream in, int n, boolean eofOk) throws IOException {
+        byte[] buf = new byte[n];
+        int off = 0;
+        while (off < n) {
+            int r = in.read(buf, off, n - off);
+            if (r < 0) {
+                if (eofOk && off == 0) return null;
+                throw new EOFException("途中で切断されました");
+            }
+            off += r;
+        }
+        return buf;
+    }
+
+    private static int u16(byte[] b, int p) {
+        return (b[p] & 0xFF) | ((b[p + 1] & 0xFF) << 8);
+    }
+
+    private static long u32(byte[] b, int p) {
+        return (b[p] & 0xFFL) | ((b[p + 1] & 0xFFL) << 8) | ((b[p + 2] & 0xFFL) << 16) | ((b[p + 3] & 0xFFL) << 24);
+    }
+}
