@@ -348,8 +348,13 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
         in.setText(p.displayValue(PlcLink.mem));
         in.selectAll();
         LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(8), dp(20), 0);
         box.addView(in, new LinearLayout.LayoutParams(-1, -2));
+        final TextView errText = new TextView(this);
+        errText.setTextColor(0xFFEF5350);
+        errText.setTextSize(14);
+        box.addView(errText);
 
         String range = "";
         if (!p.min.isEmpty() || !p.max.isEmpty()) {
@@ -366,7 +371,7 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
             final String s = in.getText().toString();
             String err = p.checkInput(s);
             if (err != null) {
-                in.setError(err);
+                errText.setText("⚠ " + err);   // ボタンを隠さないようダイアログ内に表示
                 return;
             }
             String why = canOperate();
