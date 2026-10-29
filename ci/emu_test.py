@@ -160,9 +160,7 @@ tap_text(r"^書込\|")
 time.sleep(0.8)
 shot("input_out_of_range")
 check("範囲外は書込まない", 1500 not in sim_result().get("d100_values", []))
-adb("shell", "input", "keyevent", "KEYCODE_BACK")
-time.sleep(0.5)
-adb("shell", "input", "keyevent", "KEYCODE_BACK")
+tap_text(r"^キャンセル\|")
 time.sleep(0.8)
 
 # 停止ボタン
@@ -175,6 +173,7 @@ check("停止ボタン: M101", sim_result().get("m101_on_seen", 0) >= 1)
 pm.tap(180, 590)
 time.sleep(1.2)
 shot("screen2")
+check("画面切替", bounds_of(dump(), r"\|panel$") is not None)
 pm.tap(180, 590)
 time.sleep(1.0)
 
