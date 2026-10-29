@@ -18,6 +18,13 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".PanelActivity"
+            android:exported="${panelExported}"
+            android:label="操作画面"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:windowSoftInputMode="adjustPan" />
+        <activity
             android:name=".SettingsActivity"
             android:exported="false"
             android:label="設定"

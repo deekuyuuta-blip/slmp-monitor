@@ -34,7 +34,7 @@ import java.util.List;
  * スマホを「SLMP対応機器」として待ち受け、R04CPU等のシンプルCPU通信で
  * PLC→スマホ（PLCの書込み）・スマホ→PLC（PLCの読出し）を行う。
  */
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements PlcLink.Listener {
 
     private static final int COLOR_ON = 0xFF2E7D32;
     private static final int COLOR_GRAY = 0xFF9E9E9E;
@@ -44,19 +44,15 @@ public class MainActivity extends Activity {
     private static final int REQ_SETTINGS = 10;
 
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final DeviceMemory mem = new DeviceMemory();
+    private final DeviceMemory mem = PlcLink.mem;
     private ItemStore store;
-    private SlmpServer server;
     private final List<MonitorItem> items = new ArrayList<>();
     private final List<Row> rows = new ArrayList<>();
 
     private Button startBtn;
-    private int serverPort;
-    private String serverPlcIp = "";
     private TextView ipText, statusText;
     private Switch unlockSwitch;
     private LinearLayout listLayout;
-    private short heartbeatCount;
 
     private static final class Row {
         MonitorItem item;
@@ -69,23 +65,6 @@ public class MainActivity extends Activity {
         public void run() {
             updateStatusAndValues();
             main.postDelayed(this, 300);
-        }
-    };
-
-    private final Runnable heartbeat = new Runnable() {
-        @Override
-        public void run() {
-            String hb = store.heartbeat();
-            if (server != null && !hb.isEmpty()) {
-                try {
-                    Device d = Device.parse(hb);
-                    heartbeatCount++;
-                    if (d.bit) mem.writeBits(d.code, d.number, new boolean[]{(heartbeatCount & 1) != 0});
-                    else mem.writeWords(d.code, d.number, new short[]{heartbeatCount});
-                } catch (IllegalArgumentException ignored) {
-                }
-            }
-            main.postDelayed(this, 1000);
         }
     };
 
@@ -106,7 +85,7 @@ public class MainActivity extends Activity {
         startBtn = new Button(this);
         startBtn.setText("待受開始");
         startBtn.setOnClickListener(v -> {
-            if (server != null) stopServer();
+            if (PlcLink.isRunning()) stopServer();
             else startServer();
         });
         r1.addView(startBtn, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -115,6 +94,11 @@ public class MainActivity extends Activity {
         settings.setOnClickListener(v -> openSettings());
         r1.addView(settings);
         root.addView(r1);
+
+        Button panel = new Button(this);
+        panel.setText("▶ 操作画面を開く");
+        panel.setOnClickListener(v -> openPanel());
+        root.addView(panel, new LinearLayout.LayoutParams(-1, -2));
 
         ipText = new TextView(this);
         ipText.setTextSize(13);
@@ -148,8 +132,17 @@ public class MainActivity extends Activity {
         rebuildRows();
         updateIpText();
         main.post(refresh);
-        main.post(heartbeat);
-        if (store.autoStart()) startServer();
+        PlcLink.addListener(this);
+        PlcLink.setHeartbeatDevice(store.heartbeat());
+        if (savedInstanceState == null) {
+            if (store.autoStart()) startServer();
+            if (store.openPanelOnStart()) openPanel();
+        }
+        onServerStateChanged(null);
+    }
+
+    private void openPanel() {
+        startActivity(new Intent(this, PanelActivity.class));
     }
 
     private void rebuildRows() {
@@ -238,53 +231,34 @@ public class MainActivity extends Activity {
     }
 
     private void refreshButtons() {
-        boolean en = server != null && unlockSwitch.isChecked();
+        boolean en = PlcLink.isRunning() && unlockSwitch.isChecked();
         for (Row r : rows) for (Button b : r.buttons) b.setEnabled(en);
     }
 
     // ------------------------------------------------------------ サーバ
 
     private void startServer() {
-        final int port = store.port();
-        final String plcIp = store.plcIp();
         startBtn.setEnabled(false);
-        final SlmpServer s = new SlmpServer(mem, port, plcIp);
-        new Thread(() -> {
-            String err = null;
-            try {
-                s.start();
-            } catch (Exception e) {
-                err = e.getMessage();
-            }
-            final String error = err;
-            main.post(() -> {
-                startBtn.setEnabled(true);
-                if (error != null) {
-                    toast("待受を開始できません（ポート " + port + "）: " + error);
-                    return;
-                }
-                if (isFinishing()) {
-                    s.stop();
-                    return;
-                }
-                server = s;
-                serverPort = port;
-                serverPlcIp = plcIp;
-                startBtn.setText("待受停止");
-                getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                updateIpText();
-                refreshButtons();
-            });
-        }).start();
+        PlcLink.start(store.port(), store.plcIp());
     }
 
     private void stopServer() {
-        final SlmpServer s = server;
-        server = null;
-        if (s != null) new Thread(s::stop).start();
-        startBtn.setText("待受開始");
-        unlockSwitch.setChecked(false);
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        PlcLink.stop();
+    }
+
+    @Override
+    public void onServerStateChanged(String error) {
+        startBtn.setEnabled(!PlcLink.isStarting());
+        if (error != null) toast(error);
+        boolean on = PlcLink.isRunning();
+        startBtn.setText(on ? "待受停止" : "待受開始");
+        if (on) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            unlockSwitch.setChecked(false);
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+        updateIpText();
         refreshButtons();
         updateStatusAndValues();
     }
@@ -298,23 +272,20 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != REQ_SETTINGS || resultCode != RESULT_OK) return;
         updateIpText();
+        PlcLink.setHeartbeatDevice(store.heartbeat());
         // 待受中にポートやPLC IPが変わったら、待受をやり直す
-        if (server != null && (serverPort != store.port() || !serverPlcIp.equals(store.plcIp()))) {
-            final SlmpServer old = server;
-            server = null;
+        if (PlcLink.isRunning() && (PlcLink.serverPort() != store.port() || !PlcLink.serverPlcIp().equals(store.plcIp()))) {
             startBtn.setEnabled(false);
-            new Thread(() -> {
-                old.stop();
-                main.post(this::startServer);
-            }).start();
+            PlcLink.restartIfChanged(store.port(), store.plcIp());
             toast("新しい設定で待受をやり直します");
         }
     }
 
     private void updateStatusAndValues() {
         boolean fresh = false;
+        SlmpServer server = PlcLink.server();
         if (server == null) {
-            setStatus("停止中", COLOR_GRAY);
+            setStatus(PlcLink.isStarting() ? "待受を開始しています…" : "停止中", COLOR_GRAY);
         } else {
             long last = server.lastRequestMillis;
             long age = System.currentTimeMillis() - last;
@@ -563,7 +534,7 @@ public class MainActivity extends Activity {
         t.setTextSize(12);
         t.setTypeface(Typeface.MONOSPACE);
         t.setPadding(dp(16), dp(8), dp(16), dp(8));
-        List<String> lines = server != null ? server.logLines() : new ArrayList<>();
+        List<String> lines = PlcLink.server() != null ? PlcLink.server().logLines() : new ArrayList<>();
         Collections.reverse(lines);   // 新しい順
         t.setText(lines.isEmpty() ? "ログはありません（待受中のみ記録）" : android.text.TextUtils.join("\n", lines));
         ScrollView sv = new ScrollView(this);
@@ -575,13 +546,18 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------ ライフサイクル
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        onServerStateChanged(null);
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
         main.removeCallbacks(refresh);
-        main.removeCallbacks(heartbeat);
-        final SlmpServer s = server;
-        server = null;
-        if (s != null) new Thread(s::stop).start();
+        PlcLink.removeListener(this);
+        // アプリを閉じたら（戻るボタンで終了）待受も止める
+        if (isFinishing()) PlcLink.stop();
     }
 
     // ------------------------------------------------------------ 小物

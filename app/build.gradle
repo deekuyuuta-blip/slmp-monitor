@@ -10,8 +10,8 @@ android {
         applicationId 'jp.yuta.slmpmonitor'
         minSdk 24
         targetSdk 34
-        versionCode 2
-        versionName '1.1'
+        versionCode 3
+        versionName '1.2'
     }
 
     // 更新インストールできるよう、毎回同じ鍵で署名する（個人利用のアプリ用）
@@ -33,6 +33,11 @@ android {
         release {
             minifyEnabled false
             signingConfig signingConfigs.fixed
+            manifestPlaceholders = [panelExported: "false"]
+        }
+        debug {
+            // エミュレータ試験で操作画面を直接起動できるようにする
+            manifestPlaceholders = [panelExported: "true"]
         }
     }
 }

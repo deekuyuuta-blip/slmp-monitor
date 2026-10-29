@@ -32,6 +32,9 @@ final class ItemStore {
     String heartbeat() { return prefs.getString("heartbeat", ""); }
     void saveHeartbeat(String dev) { prefs.edit().putString("heartbeat", dev).apply(); }
 
+    boolean openPanelOnStart() { return prefs.getInt("openPanel", 0) == 1; }
+    void saveOpenPanelOnStart(boolean on) { prefs.edit().putInt("openPanel", on ? 1 : 0).apply(); }
+
     boolean autoStart() { return prefs.getInt("autoStart", 0) == 1; }
     void saveAutoStart(boolean on) { prefs.edit().putInt("autoStart", on ? 1 : 0).apply(); }
 

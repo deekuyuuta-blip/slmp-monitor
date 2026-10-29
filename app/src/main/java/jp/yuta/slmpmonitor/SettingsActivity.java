@@ -21,7 +21,7 @@ public class SettingsActivity extends Activity {
 
     private ItemStore store;
     private EditText plcIp, port, heartbeat, staleSec;
-    private CheckBox autoStart;
+    private CheckBox autoStart, openPanel;
     private TextView subnetWarn;
 
     @Override
@@ -72,6 +72,10 @@ public class SettingsActivity extends Activity {
         autoStart.setText("アプリ起動時に自動で待受を開始");
         autoStart.setChecked(store.autoStart());
         f.addView(autoStart);
+        openPanel = new CheckBox(this);
+        openPanel.setText("アプリ起動時に操作画面を開く");
+        openPanel.setChecked(store.openPanelOnStart());
+        f.addView(openPanel);
 
         LinearLayout btns = new LinearLayout(this);
         btns.setGravity(Gravity.END);
@@ -141,6 +145,7 @@ public class SettingsActivity extends Activity {
         store.saveHeartbeat(hb);
         store.saveStaleSec(st);
         store.saveAutoStart(autoStart.isChecked());
+        store.saveOpenPanelOnStart(openPanel.isChecked());
         Toast.makeText(this, "保存しました", Toast.LENGTH_SHORT).show();
         setResult(RESULT_OK);
         finish();
