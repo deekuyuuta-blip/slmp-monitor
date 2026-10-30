@@ -105,9 +105,13 @@ def pick_file(name):
     """ファイル選択画面で Downloads を開き、name をタップする"""
     for attempt in range(5):
         x = dump()
+        with open(f"{OUT}/pick_{name}_{attempt}.xml", "w") as f:
+            f.write(x)
         if not in_picker(x):
+            results["notes"].append(f"pick {name}: back to app at attempt {attempt}")
             return True   # アプリに戻った
         b = bounds_of(x, "^" + re.escape(name) + r"\|")
+        results["notes"].append(f"pick {name}: attempt {attempt} bounds={b}")
         if not b:
             if not tap_text(r"(?i)show roots|ルートを表示", tries=1):
                 tap_text(r"(?i)^navigate up|上へ移動", tries=1)
