@@ -90,6 +90,26 @@ def sim_result():
         return {}
 
 
+def pick_file(name):
+    """ファイル選択画面で name を開く（グリッド表示ならカードの絵の部分をタップ）"""
+    for attempt in range(4):
+        x = dump()
+        if "FILES IN" not in x and "Downloads" not in x and "ダウンロード" not in x:
+            return True   # アプリに戻った
+        b = bounds_of(x, re.escape(name))
+        if not b:
+            tap_text(r"(?i)show roots|ルートを表示", tries=1)
+            time.sleep(1)
+            tap_text(r"(?i)^downloads?\||^ダウンロード", tries=1)
+            time.sleep(1.5)
+            continue
+        cx = (b[0] + b[2]) // 2
+        cy = (b[1] + b[3]) // 2 - (250 if attempt % 2 == 0 else 0)   # カードの絵 → 文字の順で試す
+        adb("shell", "input", "tap", str(cx), str(cy))
+        time.sleep(2)
+    return False
+
+
 def check(name, ok, detail=""):
     results["checks"][name] = {"ok": bool(ok), "detail": detail}
     print(("OK  " if ok else "NG  ") + name, detail, flush=True)
@@ -280,13 +300,7 @@ time.sleep(0.8)
 tap_text(r"ファイルを選ぶ")
 time.sleep(2.5)
 shot("open_picker")
-if not tap_text(r"import_test\.json", tries=1):
-    tap_text(r"(?i)show roots|ルートを表示", tries=1)
-    time.sleep(1)
-    tap_text(r"(?i)^downloads?\||^ダウンロード", tries=1)
-    time.sleep(1.5)
-    shot("open_picker_downloads")
-    tap_text(r"import_test\.json")
+pick_file("import_test.json")
 time.sleep(2)
 shot("import_confirm")
 check("読込前に内容を確認", bounds_of(dump(), r"画面 2") is not None or bounds_of(dump(), r"置き換え") is not None)
@@ -306,12 +320,7 @@ tap_text(r"^読み込み\|")
 time.sleep(0.8)
 tap_text(r"ファイルを選ぶ")
 time.sleep(2.5)
-if not tap_text(r"broken\.json", tries=1):
-    tap_text(r"(?i)show roots|ルートを表示", tries=1)
-    time.sleep(1)
-    tap_text(r"(?i)^downloads?\||^ダウンロード", tries=1)
-    time.sleep(1.5)
-    tap_text(r"broken\.json")
+pick_file("broken.json")
 time.sleep(0.6)
 shot("broken_file")
 time.sleep(1.5)
