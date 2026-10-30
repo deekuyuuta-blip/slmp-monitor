@@ -90,24 +90,29 @@ def sim_result():
         return {}
 
 
+def in_picker(x):
+    return "documentsui" in x
+
+
 def pick_file(name):
-    """ファイル選択画面で name を開く（グリッド表示ならカードの絵の部分をタップ）"""
-    for attempt in range(4):
+    """ファイル選択画面で Downloads を開き、name をタップする"""
+    for attempt in range(5):
         x = dump()
-        if "FILES IN" not in x and "Downloads" not in x and "ダウンロード" not in x:
+        if not in_picker(x):
             return True   # アプリに戻った
-        b = bounds_of(x, re.escape(name))
+        b = bounds_of(x, "^" + re.escape(name) + r"\|")
         if not b:
-            tap_text(r"(?i)show roots|ルートを表示", tries=1)
-            time.sleep(1)
-            tap_text(r"(?i)^downloads?\||^ダウンロード", tries=1)
-            time.sleep(1.5)
+            if not tap_text(r"(?i)show roots|ルートを表示", tries=1):
+                tap_text(r"(?i)^navigate up|上へ移動", tries=1)
+            time.sleep(1.2)
+            tap_text(r"(?i)^downloads\||^ダウンロード\|", tries=1)
+            time.sleep(2)
             continue
         cx = (b[0] + b[2]) // 2
-        cy = (b[1] + b[3]) // 2 - (250 if attempt % 2 == 0 else 0)   # カードの絵 → 文字の順で試す
+        cy = (b[1] + b[3]) // 2
         adb("shell", "input", "tap", str(cx), str(cy))
-        time.sleep(2)
-    return False
+        time.sleep(2.5)
+    return not in_picker(dump())
 
 
 def check(name, ok, detail=""):

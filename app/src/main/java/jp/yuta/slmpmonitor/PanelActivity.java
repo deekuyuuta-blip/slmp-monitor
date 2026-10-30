@@ -901,6 +901,7 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
         i.addCategory(Intent.CATEGORY_OPENABLE);
         i.setType("application/json");
         i.putExtra(Intent.EXTRA_TITLE, name);
+        putInitialFolder(i);
         try {
             startActivityForResult(i, REQ_SAVE_FILE);
         } catch (android.content.ActivityNotFoundException e) {
@@ -936,10 +937,19 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
         // .json は端末によって種類がばらばらなので全ファイルから選べるようにする
         i.setType("*/*");
         i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/json", "text/plain", "application/octet-stream", "*/*"});
+        putInitialFolder(i);
         try {
             startActivityForResult(i, REQ_OPEN_FILE);
         } catch (android.content.ActivityNotFoundException e) {
             message("ファイル選択の画面を開けません。貼り付けを使ってください");
+        }
+    }
+
+    /** 前回使ったファイルの場所から開く（Android 8以降） */
+    private void putInitialFolder(Intent i) {
+        String last = prefs.getString("panelLastFile", null);
+        if (last != null && android.os.Build.VERSION.SDK_INT >= 26) {
+            i.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, android.net.Uri.parse(last));
         }
     }
 
@@ -948,6 +958,7 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         android.net.Uri uri = data.getData();
+        prefs.edit().putString("panelLastFile", uri.toString()).apply();
         if (requestCode == REQ_OPEN_FILE) {
             try {
                 String json = readText(uri);
