@@ -121,7 +121,23 @@ def pick_file(name):
             continue
         cx = (b[0] + b[2]) // 2
         cy = (b[1] + b[3]) // 2
-        adb("shell", "input", "tap", str(cx), str(cy))
+        if attempt == 0:      # ゆっくり押して離す
+            adb("shell", "input", "motionevent", "DOWN", str(cx), str(cy - 300))
+            time.sleep(0.15)
+            adb("shell", "input", "motionevent", "UP", str(cx), str(cy - 300))
+        elif attempt == 1:    # リスト表示に切り替えてからタップ
+            tap_text(r"(?i)list view|リスト表示", tries=1)
+            time.sleep(1.5)
+            b2 = bounds_of(dump(), "^" + re.escape(name) + r"\|")
+            if b2:
+                adb("shell", "input", "tap", str((b2[0] + b2[2]) // 2), str((b2[1] + b2[3]) // 2))
+        elif attempt == 2:    # キーボード操作
+            adb("shell", "input", "keyevent", "KEYCODE_TAB")
+            for _ in range(6):
+                adb("shell", "input", "keyevent", "KEYCODE_DPAD_DOWN")
+            adb("shell", "input", "keyevent", "KEYCODE_ENTER")
+        else:
+            adb("shell", "input", "tap", str(cx), str(cy))
         time.sleep(2.5)
     return not in_picker(dump())
 
