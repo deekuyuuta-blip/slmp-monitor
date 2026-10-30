@@ -101,45 +101,39 @@ def in_picker(x):
     return "documentsui" in x or x == ""
 
 
+def focused_bounds(x):
+    for m in re.finditer(r'<node [^>]*focused="true"[^>]*>', x):
+        bb = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', m.group(0))
+        if bb:
+            return tuple(map(int, bb.groups()))
+    return None
+
+
 def pick_file(name):
-    """ファイル選択画面で Downloads を開き、name をタップする"""
-    for attempt in range(5):
+    """ファイル選択画面で Downloads を開き、キーボードで name にフォーカスして開く
+    （この環境のファイル選択画面は input tap に反応しないため）"""
+    x = dump()
+    if not bounds_of(x, "^" + re.escape(name) + r"\|"):
+        tap_text(r"(?i)show roots|ルートを表示", tries=1)
+        time.sleep(1.2)
+        tap_text(r"(?i)^downloads\||^ダウンロード\|", tries=1)
+        time.sleep(2)
+    adb("shell", "input", "keyevent", "KEYCODE_TAB")
+    for step in range(16):
         x = dump()
-        with open(f"{OUT}/pick_{name}_{attempt}.xml", "w") as f:
-            f.write(x)
         if not in_picker(x):
-            results["notes"].append(f"pick {name}: back to app at attempt {attempt}")
-            return True   # アプリに戻った
-        b = bounds_of(x, "^" + re.escape(name) + r"\|")
-        results["notes"].append(f"pick {name}: attempt {attempt} bounds={b}")
-        if not b:
-            if not tap_text(r"(?i)show roots|ルートを表示", tries=1):
-                tap_text(r"(?i)^navigate up|上へ移動", tries=1)
-            time.sleep(1.2)
-            tap_text(r"(?i)^downloads\||^ダウンロード\|", tries=1)
-            time.sleep(2)
-            continue
-        cx = (b[0] + b[2]) // 2
-        cy = (b[1] + b[3]) // 2
-        if attempt == 0:      # ゆっくり押して離す
-            adb("shell", "input", "motionevent", "DOWN", str(cx), str(cy - 300))
-            time.sleep(0.15)
-            adb("shell", "input", "motionevent", "UP", str(cx), str(cy - 300))
-        elif attempt == 1:    # リスト表示に切り替えてからタップ
-            tap_text(r"(?i)list view|リスト表示", tries=1)
-            time.sleep(1.5)
-            b2 = bounds_of(dump(), "^" + re.escape(name) + r"\|")
-            if b2:
-                adb("shell", "input", "tap", str((b2[0] + b2[2]) // 2), str((b2[1] + b2[3]) // 2))
-        elif attempt == 2:    # キーボード操作
-            adb("shell", "input", "keyevent", "KEYCODE_TAB")
-            for _ in range(6):
-                adb("shell", "input", "keyevent", "KEYCODE_DPAD_DOWN")
+            return True
+        t = bounds_of(x, "^" + re.escape(name) + r"\|")
+        f = focused_bounds(x)
+        results["notes"].append(f"pick {name}: step {step} target={t} focus={f}")
+        if t and f and f[0] <= t[0] and t[2] <= f[2] and f[1] <= t[1] and t[3] <= f[3] and (f[2] - f[0]) < 1080 * 0.95 or \
+                (t and f and f[1] <= t[1] and t[3] <= f[3] and f[3] - f[1] < 400):
             adb("shell", "input", "keyevent", "KEYCODE_ENTER")
-        else:
-            adb("shell", "input", "tap", str(cx), str(cy))
-        time.sleep(2.5)
-    return not in_picker(dump())
+            time.sleep(2.5)
+            return not in_picker(dump())
+        adb("shell", "input", "keyevent", "KEYCODE_DPAD_DOWN" if step % 2 == 0 else "KEYCODE_DPAD_RIGHT")
+        time.sleep(0.4)
+    return False
 
 
 def check(name, ok, detail=""):
