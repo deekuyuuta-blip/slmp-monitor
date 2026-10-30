@@ -29,6 +29,7 @@ public class SettingsActivity extends Activity {
         super.onCreate(savedInstanceState);
         setTitle("設定");
         store = new ItemStore(getSharedPreferences("slmp", MODE_PRIVATE));
+        PlcLink.init(this);
 
         LinearLayout f = new LinearLayout(this);
         f.setOrientation(LinearLayout.VERTICAL);
@@ -76,6 +77,27 @@ public class SettingsActivity extends Activity {
         openPanel.setText("アプリ起動時に操作画面を開く");
         openPanel.setChecked(store.openPanelOnStart());
         f.addView(openPanel);
+
+        section(f, "スマホ → PLC の値");
+        TextView keep = new TextView(this);
+        keep.setTextSize(12);
+        keep.setTextColor(COLOR_NOTE);
+        keep.setText("画面から書いた値（ボタン・数値入力）は保存され、アプリを再起動しても元の値に戻ります。"
+                + "PLCが読出しで0に上書きされるのを防ぐためです（モーメンタリボタンはOFFに戻ります）。\n保存中: "
+                + PlcLink.mem.localCount() + "点");
+        f.addView(keep);
+        Button clearLocal = new Button(this);
+        clearLocal.setText("保存した値を消す（0／OFFに戻す）");
+        clearLocal.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
+                .setTitle("保存した値を消す")
+                .setMessage("スマホ→PLCの値をすべて0／OFFにします。\n待受中なら、次の読出しでPLC側も0／OFFになります。")
+                .setPositiveButton("消す", (d, w) -> {
+                    PlcLink.mem.clearLocal();
+                    keep.setText("保存中: 0点");
+                    Toast.makeText(this, "消しました", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("キャンセル", null).show());
+        f.addView(clearLocal);
 
         LinearLayout btns = new LinearLayout(this);
         btns.setGravity(Gravity.END);

@@ -70,6 +70,7 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("slmp", MODE_PRIVATE);
         store = new ItemStore(prefs);
+        PlcLink.init(this);
         panel = loadPanel();
         screenIndex = Math.min(prefs.getInt("panelScreen", 0), panel.screens.size() - 1);
 

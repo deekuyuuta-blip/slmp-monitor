@@ -484,7 +484,7 @@ public class PanelView extends View {
             pendingRelease.run();
         }
         try {
-            p.writeBit(mem, true);
+            p.writeBitTemp(mem, true);
             momentaryOn = p;
             momentaryOnAt = System.currentTimeMillis();
             host.operated();
@@ -501,7 +501,7 @@ public class PanelView extends View {
         pendingRelease = () -> {
             pendingRelease = null;
             try {
-                p.writeBit(mem, false);
+                p.writeBitTemp(mem, false);
             } catch (RuntimeException ignored) {
             }
             if (momentaryOn == p) momentaryOn = null;
@@ -519,7 +519,7 @@ public class PanelView extends View {
         }
         if (momentaryOn != null) {
             try {
-                momentaryOn.writeBit(mem, false);
+                momentaryOn.writeBitTemp(mem, false);
             } catch (RuntimeException ignored) {
             }
             momentaryOn = null;

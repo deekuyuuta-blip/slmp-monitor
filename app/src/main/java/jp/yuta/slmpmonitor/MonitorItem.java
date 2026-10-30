@@ -99,12 +99,12 @@ public final class MonitorItem {
     /** スマホ内メモリに値をセット（PLCが次の読出しで取りに来る） */
     public void writeValue(DeviceMemory m, String input) {
         Device d = device();
-        m.writeWords(d.code, d.number, parseWords(input));
+        m.localWriteWords(d.code, d.number, parseWords(input));
     }
 
     public void writeBit(DeviceMemory m, boolean on) {
         Device d = device();
-        m.writeBits(d.code, d.number, new boolean[]{on});
+        m.localWriteBits(d.code, d.number, new boolean[]{on});
     }
 
     // 32bitは下位ワードが先（三菱の連続2ワード）

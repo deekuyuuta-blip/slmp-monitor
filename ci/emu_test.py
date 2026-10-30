@@ -356,6 +356,23 @@ time.sleep(1.5)
 tabs_after = re.findall(r'text="([^"]+)"[^>]*class="android.widget.TextView"', dump())[:3]
 check("壊れたファイルは読まず今の画面のまま", tabs_before == tabs_after and PKG in dump(), f"{tabs_before} -> {tabs_after}")
 
+# ---- 再起動しても画面の値が残る ＋ UDP ----
+adb("shell", "am", "force-stop", PKG)
+time.sleep(1)
+adb("shell", "am", "start", "-W", "-n", f"{PKG}/.MainActivity")
+time.sleep(4)
+adb("emu", "redir", "add", "udp:5000:5000")
+time.sleep(1)
+subprocess.run([sys.executable, "ci/udp_check.py", "127.0.0.1", "5000", "udp.json"])
+try:
+    u = json.load(open("udp.json"))
+except Exception:
+    u = {}
+check("UDPで読出し・書込み", u.get("ok") and u.get("write_end") == 0, json.dumps(u))
+check("再起動後も設定値D100=555が残る（PLCが0で上書きされない）", u.get("d100") == 555, json.dumps(u))
+time.sleep(1.5)
+shot("after_restart_udp")
+
 # 一覧画面
 adb("shell", "input", "keyevent", "KEYCODE_BACK")
 time.sleep(1)

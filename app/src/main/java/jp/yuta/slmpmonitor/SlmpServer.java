@@ -6,6 +6,8 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -14,14 +16,17 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * SLMP対応機器（QnA互換3Eフレーム・バイナリ・TCP）として待ち受けるサーバ。
+ * SLMP対応機器（QnA互換3Eフレーム・バイナリ）として待ち受けるサーバ。
+ * 同じポート番号で TCP と UDP の両方を待ち受ける（シンプルCPU通信はUDPのことが多い）。
  * R04CPU等のシンプルCPU通信から来る一括読出し(0401)／一括書込み(1401)に応答する。
  * サブコマンド 0000/0001（Q互換）と 0002/0003（iQ-R形式）に対応。
  */
@@ -42,6 +47,10 @@ public final class SlmpServer {
     private int lastLogRepeat;
 
     private volatile ServerSocket server;
+    private volatile DatagramSocket udp;
+    /** UDPの相手IP → 最後に受信した時刻 */
+    private final Map<String, Long> udpPeers = new HashMap<>();
+    private static final long UDP_PEER_MS = 5000;
     private volatile boolean running;
 
     public final AtomicLong requestCount = new AtomicLong();
@@ -64,7 +73,16 @@ public final class SlmpServer {
     public List<String> clientIps() {
         List<String> l = new ArrayList<>();
         synchronized (clients) {
-            for (Socket s : clients) l.add(s.getInetAddress().getHostAddress());
+            for (Socket s : clients) {
+                String ip = s.getInetAddress().getHostAddress() + "(TCP)";
+                if (!l.contains(ip)) l.add(ip);
+            }
+        }
+        long now = System.currentTimeMillis();
+        synchronized (udpPeers) {
+            for (Map.Entry<String, Long> e : udpPeers.entrySet()) {
+                if (now - e.getValue() <= UDP_PEER_MS) l.add(e.getKey() + "(UDP)");
+            }
         }
         return l;
     }
@@ -73,12 +91,25 @@ public final class SlmpServer {
         ServerSocket ss = new ServerSocket();
         ss.setReuseAddress(true);
         ss.bind(new InetSocketAddress(port));
+        DatagramSocket ds;
+        try {
+            ds = new DatagramSocket(null);
+            ds.setReuseAddress(true);
+            ds.bind(new InetSocketAddress(port));
+        } catch (IOException e) {
+            ss.close();
+            throw e;
+        }
         server = ss;
+        udp = ds;
         running = true;
-        addLog("ポート " + port + " で待受開始" + (allowedIp.isEmpty() ? "（接続元の制限なし）" : "（許可: " + allowedIp + "）"));
+        addLog("ポート " + port + " で待受開始（TCP・UDP）" + (allowedIp.isEmpty() ? "（接続元の制限なし）" : "（許可: " + allowedIp + "）"));
         Thread t = new Thread(this::acceptLoop, "slmp-accept");
         t.setDaemon(true);
         t.start();
+        Thread u = new Thread(this::udpLoop, "slmp-udp");
+        u.setDaemon(true);
+        u.start();
     }
 
     public void stop() {
@@ -87,6 +118,7 @@ public final class SlmpServer {
             if (server != null) server.close();
         } catch (IOException ignored) {
         }
+        if (udp != null) udp.close();
         synchronized (clients) {
             for (Socket s : clients) {
                 try {
@@ -104,7 +136,7 @@ public final class SlmpServer {
     }
 
     public int clientCount() {
-        return clients.size();
+        return clientIps().size();
     }
 
     // ---- ログ（同じ内容が続くときはまとめる） ----
@@ -150,6 +182,43 @@ public final class SlmpServer {
                 t.start();
             } catch (IOException e) {
                 if (running) addLog("待受エラー: " + e.getMessage());
+            }
+        }
+    }
+
+    private void udpLoop() {
+        byte[] buf = new byte[8192];
+        while (running) {
+            try {
+                DatagramPacket p = new DatagramPacket(buf, buf.length);
+                udp.receive(p);
+                String ip = p.getAddress().getHostAddress();
+                if (!allowedIp.isEmpty() && !allowedIp.equals(ip)) {
+                    addLog("UDP受信拒否 " + ip + "（設定のPLC IP " + allowedIp + " と不一致）");
+                    continue;
+                }
+                int n = p.getLength();
+                if (n < 9 || (buf[0] & 0xFF) != 0x50 || buf[1] != 0x00) {
+                    addLog(ip + " UDP: 3Eフレーム以外を受信（交信データコードがバイナリか確認）");
+                    continue;
+                }
+                int len = u16(buf, 7);
+                if (9 + len > n) {
+                    addLog(ip + " UDP: データ長が不正");
+                    continue;
+                }
+                boolean first;
+                synchronized (udpPeers) {
+                    Long last = udpPeers.put(ip, System.currentTimeMillis());
+                    first = last == null || System.currentTimeMillis() - last > UDP_PEER_MS;
+                }
+                if (first) addLog("PLC受信開始 " + ip + "（UDP）");
+                byte[] h = java.util.Arrays.copyOfRange(buf, 0, 9);
+                byte[] body = java.util.Arrays.copyOfRange(buf, 9, 9 + len);
+                byte[] r = handle(ip, h, body);
+                udp.send(new DatagramPacket(r, r.length, p.getAddress(), p.getPort()));
+            } catch (IOException e) {
+                if (running) addLog("UDPエラー: " + e.getMessage());
             }
         }
     }

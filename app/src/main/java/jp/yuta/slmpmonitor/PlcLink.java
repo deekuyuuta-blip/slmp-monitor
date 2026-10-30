@@ -51,6 +51,22 @@ public final class PlcLink {
     private PlcLink() {
     }
 
+    private static android.content.SharedPreferences prefs;
+    private static int restoredCount = -1;
+
+    /** 保存しておいたスマホ→PLCの値を戻し、以後の変更を保存する。待受開始より前に呼ぶ */
+    public static void init(android.content.Context c) {
+        if (prefs != null) return;
+        prefs = c.getApplicationContext().getSharedPreferences("slmp", android.content.Context.MODE_PRIVATE);
+        restoredCount = mem.importLocal(prefs.getString("localValues", ""));
+        mem.setOnLocalChange(() -> prefs.edit().putString("localValues", mem.exportLocal()).apply());
+    }
+
+    /** 起動時に戻した値の数（init前は -1） */
+    public static int restoredCount() {
+        return restoredCount;
+    }
+
     public static void addListener(Listener l) {
         if (!listeners.contains(l)) listeners.add(l);
     }

@@ -74,6 +74,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         store = new ItemStore(getSharedPreferences("slmp", MODE_PRIVATE));
+        PlcLink.init(this);
         items.addAll(store.loadItems());
 
         LinearLayout root = new LinearLayout(this);

@@ -150,7 +150,13 @@ public final class Panel {
 
         public void writeBit(DeviceMemory m, boolean on) {
             Device d = Device.parse(device);
-            m.writeBits(d.code, d.number, new boolean[]{on});
+            m.localWriteBits(d.code, d.number, new boolean[]{on});
+        }
+
+        /** モーメンタリ用（保存しない：再起動でONのまま戻るのを防ぐ） */
+        public void writeBitTemp(DeviceMemory m, boolean on) {
+            Device d = Device.parse(device);
+            m.tempWriteBits(d.code, d.number, new boolean[]{on});
         }
 
         public boolean readBit(DeviceMemory m) {
@@ -259,7 +265,7 @@ public final class Panel {
                 default:
                     w = new short[]{(short) Math.round(v * Math.pow(10, decimals))};
             }
-            m.writeWords(d.code, d.number, w);
+            m.localWriteWords(d.code, d.number, w);
         }
 
         /** 設定の検査。問題なければ null */
