@@ -118,6 +118,8 @@ def pick_file(name):
         time.sleep(1.2)
         tap_text(r"(?i)^downloads\||^ダウンロード\|", tries=1)
         time.sleep(2)
+    tap_text(r"(?i)^list view\||リスト表示", tries=1)   # 縦1列にして下キーだけで移動できるように
+    time.sleep(1.5)
     adb("shell", "input", "keyevent", "KEYCODE_TAB")
     for step in range(16):
         x = dump()
@@ -131,7 +133,7 @@ def pick_file(name):
             adb("shell", "input", "keyevent", "KEYCODE_ENTER")
             time.sleep(2.5)
             return not in_picker(dump())
-        adb("shell", "input", "keyevent", "KEYCODE_DPAD_DOWN" if step % 2 == 0 else "KEYCODE_DPAD_RIGHT")
+        adb("shell", "input", "keyevent", "KEYCODE_DPAD_DOWN")
         time.sleep(0.4)
     return False
 
@@ -340,6 +342,7 @@ check("ファイルから読み込み", bounds_of(x, r"^読込テスト\|") is n
 with open("broken.json", "w") as f:
     f.write("this is not json")
 adb("push", "broken.json", "/sdcard/Download/broken.json", check=True)
+tabs_before = re.findall(r'text="([^"]+)"[^>]*class="android.widget.TextView"', dump())[:3]
 tap_text(r"^⋮\|")
 time.sleep(0.8)
 tap_text(r"^読み込み\|")
@@ -350,7 +353,8 @@ pick_file("broken.json")
 time.sleep(0.6)
 shot("broken_file")
 time.sleep(1.5)
-check("壊れたファイルでも落ちない", bounds_of(dump(), r"^読込テスト\|") is not None)
+tabs_after = re.findall(r'text="([^"]+)"[^>]*class="android.widget.TextView"', dump())[:3]
+check("壊れたファイルは読まず今の画面のまま", tabs_before == tabs_after and PKG in dump(), f"{tabs_before} -> {tabs_after}")
 
 # 一覧画面
 adb("shell", "input", "keyevent", "KEYCODE_BACK")
