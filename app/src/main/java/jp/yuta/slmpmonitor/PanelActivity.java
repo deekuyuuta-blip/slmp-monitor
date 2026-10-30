@@ -895,8 +895,7 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
     }
 
     private void saveToFile() {
-        String name = "操作画面_" + new java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.ROOT)
-                .format(new java.util.Date()) + ".json";
+        String name = exportFileName();
         Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
         i.setType("application/json");
@@ -909,10 +908,28 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
         }
     }
 
+    /** 例: 操作画面_メイン・画面2_2026-10-31_0222.json */
+    private String exportFileName() {
+        StringBuilder names = new StringBuilder();
+        for (Panel.Screen sc : panel.screens) {
+            String n = sc.name.trim().replaceAll("[\\\\/:*?\"<>|\\s]+", "-");
+            if (n.isEmpty()) continue;
+            if (names.length() > 0) names.append("・");
+            names.append(n);
+            if (names.length() > 40) {
+                names.setLength(40);
+                names.append("ほか");
+                break;
+            }
+        }
+        String date = new java.text.SimpleDateFormat("yyyy-MM-dd_HHmm", java.util.Locale.ROOT).format(new java.util.Date());
+        return "操作画面_" + (names.length() > 0 ? names + "_" : "") + date + ".json";
+    }
+
     private void shareJson() {
         Intent send = new Intent(Intent.ACTION_SEND);
         send.setType("text/plain");
-        send.putExtra(Intent.EXTRA_SUBJECT, "SLMPモニタ 操作画面データ");
+        send.putExtra(Intent.EXTRA_SUBJECT, "SLMPモニタ " + exportFileName().replace(".json", ""));
         send.putExtra(Intent.EXTRA_TEXT, panel.toJson());
         startActivity(Intent.createChooser(send, "操作画面データを送る"));
     }
