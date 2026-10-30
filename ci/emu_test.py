@@ -235,6 +235,88 @@ time.sleep(0.8)
 tap_text(r"^変更\|")
 time.sleep(3)
 
+# ---- ファイルに保存 ----
+adb("shell", "rm", "-f", "/sdcard/Download/export_test.json")
+tap_text(r"^⋮\|")
+time.sleep(0.8)
+tap_text(r"書き出し")
+time.sleep(0.8)
+tap_text(r"ファイルに保存")
+time.sleep(2.5)
+shot("save_picker")
+# ファイル名を固定して Download に保存
+b = bounds_of(dump(), r"\.json")
+if b:
+    adb("shell", "input", "tap", str((b[0] + b[2]) // 2), str((b[1] + b[3]) // 2))
+    time.sleep(0.5)
+    adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
+    for _ in range(40):
+        adb("shell", "input", "keyevent", "KEYCODE_DEL")
+    adb("shell", "input", "text", "export_test.json")
+if not bounds_of(dump(), r"(?i)^download"):
+    tap_text(r"(?i)show roots|ルートを表示", tries=1)
+    time.sleep(1)
+    tap_text(r"(?i)^downloads?\||^ダウンロード", tries=1)
+    time.sleep(1.5)
+tap_text(r"(?i)^save\||^保存\|")
+time.sleep(2.5)
+shot("after_save")
+saved = adb("shell", "cat", "/sdcard/Download/export_test.json")
+check("ファイルに保存", '"screens"' in saved, saved[:120].replace("\n", " "))
+
+# ---- ファイルを選んで読み込む ----
+test_json = json.dumps({"version": 1, "landscape": False, "screens": [
+    {"name": "読込テスト", "parts": [
+        {"type": "TEXT", "x": 20, "y": 20, "w": 320, "h": 60, "label": "ファイルから読込OK", "textColor": "#FFFFEB3B"},
+        {"type": "LAMP", "x": 20, "y": 100, "w": 150, "h": 60, "label": "運転中", "device": "M0"}]},
+    {"name": "2枚目", "parts": []}]}, ensure_ascii=False)
+with open("import_test.json", "w", encoding="utf-8") as f:
+    f.write(test_json)
+adb("push", "import_test.json", "/sdcard/Download/import_test.json", check=True)
+tap_text(r"^⋮\|")
+time.sleep(0.8)
+tap_text(r"^読み込み\|")
+time.sleep(0.8)
+tap_text(r"ファイルを選ぶ")
+time.sleep(2.5)
+shot("open_picker")
+if not tap_text(r"import_test\.json", tries=1):
+    tap_text(r"(?i)show roots|ルートを表示", tries=1)
+    time.sleep(1)
+    tap_text(r"(?i)^downloads?\||^ダウンロード", tries=1)
+    time.sleep(1.5)
+    shot("open_picker_downloads")
+    tap_text(r"import_test\.json")
+time.sleep(2)
+shot("import_confirm")
+check("読込前に内容を確認", bounds_of(dump(), r"画面 2") is not None or bounds_of(dump(), r"置き換え") is not None)
+tap_text(r"^置き換える\|")
+time.sleep(2)
+shot("after_import")
+x = dump()
+check("ファイルから読み込み", bounds_of(x, r"^読込テスト\|") is not None, "")
+
+# 壊れたファイル
+with open("broken.json", "w") as f:
+    f.write("this is not json")
+adb("push", "broken.json", "/sdcard/Download/broken.json", check=True)
+tap_text(r"^⋮\|")
+time.sleep(0.8)
+tap_text(r"^読み込み\|")
+time.sleep(0.8)
+tap_text(r"ファイルを選ぶ")
+time.sleep(2.5)
+if not tap_text(r"broken\.json", tries=1):
+    tap_text(r"(?i)show roots|ルートを表示", tries=1)
+    time.sleep(1)
+    tap_text(r"(?i)^downloads?\||^ダウンロード", tries=1)
+    time.sleep(1.5)
+    tap_text(r"broken\.json")
+time.sleep(0.6)
+shot("broken_file")
+time.sleep(1.5)
+check("壊れたファイルでも落ちない", bounds_of(dump(), r"^読込テスト\|") is not None)
+
 # 一覧画面
 adb("shell", "input", "keyevent", "KEYCODE_BACK")
 time.sleep(1)

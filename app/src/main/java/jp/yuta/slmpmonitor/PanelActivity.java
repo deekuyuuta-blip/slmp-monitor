@@ -881,20 +881,121 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
 
     // ------------------------------------------------------------ 書き出し・読み込み
 
+    private static final int REQ_OPEN_FILE = 201, REQ_SAVE_FILE = 202;
+    private static final int MAX_FILE_BYTES = 2 * 1024 * 1024;
+
     private void exportPanel() {
         savePanel();
-        String json = panel.toJson();
-        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("SLMPモニタ 操作画面", json));
+        new AlertDialog.Builder(this).setTitle("書き出し")
+                .setItems(new String[]{"ファイルに保存", "共有（メール・LINE・Driveなど）", "クリップボードにコピー"}, (d, which) -> {
+                    if (which == 0) saveToFile();
+                    else if (which == 1) shareJson();
+                    else copyJson();
+                }).show();
+    }
+
+    private void saveToFile() {
+        String name = "操作画面_" + new java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.ROOT)
+                .format(new java.util.Date()) + ".json";
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/json");
+        i.putExtra(Intent.EXTRA_TITLE, name);
+        try {
+            startActivityForResult(i, REQ_SAVE_FILE);
+        } catch (android.content.ActivityNotFoundException e) {
+            message("ファイル保存の画面を開けません。共有かコピーを使ってください");
+        }
+    }
+
+    private void shareJson() {
         Intent send = new Intent(Intent.ACTION_SEND);
         send.setType("text/plain");
         send.putExtra(Intent.EXTRA_SUBJECT, "SLMPモニタ 操作画面データ");
-        send.putExtra(Intent.EXTRA_TEXT, json);
+        send.putExtra(Intent.EXTRA_TEXT, panel.toJson());
+        startActivity(Intent.createChooser(send, "操作画面データを送る"));
+    }
+
+    private void copyJson() {
+        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("SLMPモニタ 操作画面", panel.toJson()));
         message("クリップボードにコピーしました");
-        startActivity(Intent.createChooser(send, "操作画面データを送る・保存する"));
     }
 
     private void importPanel() {
+        new AlertDialog.Builder(this).setTitle("読み込み")
+                .setItems(new String[]{"ファイルを選ぶ", "貼り付けて読み込む"}, (d, which) -> {
+                    if (which == 0) openFile();
+                    else importFromPaste();
+                }).show();
+    }
+
+    private void openFile() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        // .json は端末によって種類がばらばらなので全ファイルから選べるようにする
+        i.setType("*/*");
+        i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/json", "text/plain", "application/octet-stream", "*/*"});
+        try {
+            startActivityForResult(i, REQ_OPEN_FILE);
+        } catch (android.content.ActivityNotFoundException e) {
+            message("ファイル選択の画面を開けません。貼り付けを使ってください");
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        android.net.Uri uri = data.getData();
+        if (requestCode == REQ_OPEN_FILE) {
+            try {
+                String json = readText(uri);
+                Panel p = Panel.fromJson(json);
+                confirmReplace(p, fileName(uri));
+            } catch (java.io.IOException e) {
+                message("ファイルを読めません: " + e.getMessage());
+            } catch (JSONException | RuntimeException e) {
+                message("読み込めません: 操作画面のデータではないか、形式が正しくありません");
+            }
+        } else if (requestCode == REQ_SAVE_FILE) {
+            try (java.io.OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+                if (out == null) throw new java.io.IOException("保存先を開けません");
+                out.write(panel.toJson().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                message("保存しました: " + fileName(uri));
+            } catch (java.io.IOException | RuntimeException e) {
+                message("保存できません: " + e.getMessage());
+            }
+        }
+    }
+
+    private String readText(android.net.Uri uri) throws java.io.IOException {
+        try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) throw new java.io.IOException("開けません");
+            java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                b.write(buf, 0, n);
+                if (b.size() > MAX_FILE_BYTES) throw new java.io.IOException("ファイルが大きすぎます");
+            }
+            String s = new String(b.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+            if (s.startsWith("\uFEFF")) s = s.substring(1);   // BOM付きでも読めるように
+            return s;
+        }
+    }
+
+    private String fileName(android.net.Uri uri) {
+        try (android.database.Cursor c = getContentResolver().query(uri,
+                new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (c != null && c.moveToFirst()) return c.getString(0);
+        } catch (RuntimeException ignored) {
+        }
+        String last = uri.getLastPathSegment();
+        return last == null ? "ファイル" : last;
+    }
+
+    private void importFromPaste() {
         final EditText in = new EditText(this);
         in.setHint("書き出した操作画面データ（JSON）を貼り付け");
         in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
@@ -905,22 +1006,39 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
             CharSequence clip = cm.getPrimaryClip().getItemAt(0).coerceToText(this);
             if (clip != null && clip.toString().trim().startsWith("{")) in.setText(clip);
         }
-        new AlertDialog.Builder(this).setTitle("操作画面を読み込む")
-                .setMessage("今の操作画面は置き換わります。")
+        new AlertDialog.Builder(this).setTitle("貼り付けて読み込む")
                 .setView(padded(in))
                 .setPositiveButton("読み込む", (d, w) -> {
                     try {
-                        Panel p = Panel.fromJson(in.getText().toString());
-                        panel = p;
-                        screenIndex = 0;
-                        applyOrientation();
-                        view.setPanel(panel, 0);
-                        rebuildTabs();
-                        savePanel();
-                        message("読み込みました（" + p.screens.size() + "画面）");
+                        confirmReplace(Panel.fromJson(in.getText().toString()), "貼り付けたデータ");
                     } catch (JSONException | RuntimeException e) {
                         message("読み込めません: データの形式が正しくありません");
                     }
+                })
+                .setNegativeButton("キャンセル", null).show();
+    }
+
+    /** 中身を見せてから置き換える */
+    private void confirmReplace(final Panel p, String from) {
+        int parts = 0;
+        StringBuilder names = new StringBuilder();
+        for (Panel.Screen sc : p.screens) {
+            parts += sc.parts.size();
+            if (names.length() > 0) names.append("、");
+            names.append(sc.name);
+        }
+        new AlertDialog.Builder(this).setTitle("操作画面を置き換えますか？")
+                .setMessage(from + "\n\n画面 " + p.screens.size() + "（" + names + "）\n部品 " + parts + "個\n"
+                        + (p.landscape ? "横向き" : "縦向き") + "\n\n今の操作画面は上書きされます。必要なら先に書き出してください。")
+                .setPositiveButton("置き換える", (d, w) -> {
+                    view.releaseMomentary();
+                    panel = p;
+                    screenIndex = 0;
+                    applyOrientation();
+                    view.setPanel(panel, 0);
+                    rebuildTabs();
+                    savePanel();
+                    message("読み込みました（" + p.screens.size() + "画面）");
                 })
                 .setNegativeButton("キャンセル", null).show();
     }
