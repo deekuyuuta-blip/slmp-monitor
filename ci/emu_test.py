@@ -29,8 +29,15 @@ def shot(name):
 
 
 def dump():
-    adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
-    return adb("shell", "cat", "/sdcard/ui.xml")
+    """画面の部品一覧。失敗したら古いファイルを読まないよう消してからやり直す"""
+    for _ in range(5):
+        adb("shell", "rm", "-f", "/sdcard/ui.xml")
+        adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
+        x = adb("shell", "cat", "/sdcard/ui.xml")
+        if "<hierarchy" in x:
+            return x
+        time.sleep(1)
+    return ""
 
 
 def bounds_of(xml, pattern):
@@ -91,7 +98,7 @@ def sim_result():
 
 
 def in_picker(x):
-    return "documentsui" in x
+    return "documentsui" in x or x == ""
 
 
 def pick_file(name):
