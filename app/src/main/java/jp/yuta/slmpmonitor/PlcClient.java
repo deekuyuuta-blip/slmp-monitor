@@ -65,6 +65,7 @@ public final class PlcClient extends Link {
         final short[] words;
         final boolean[] bits;
         final long at = System.currentTimeMillis();
+        boolean quiet;   // ハートビートなど、ログに出さない
 
         Write(int code, int no, short[] words, boolean[] bits) {
             this.code = code;
@@ -138,6 +139,19 @@ public final class PlcClient extends Link {
         }
     }
 
+    /** ハートビート用：ログに出さない書込み */
+    public void queueQuiet(int code, int no, short[] words, boolean[] bits) {
+        if (!running) return;
+        // 送れていない古いハートビートは新しい値で置き換える（たまらないように）
+        writes.removeIf(x -> x.quiet && x.code == code && x.no == no);
+        Write w = new Write(code, no, words, bits);
+        w.quiet = true;
+        writes.add(w);
+        synchronized (signal) {
+            signal.notifyAll();
+        }
+    }
+
     public void queueBits(int code, int no, boolean[] v) {
         if (!running) return;
         writes.add(new Write(code, no, null, v));
@@ -157,7 +171,7 @@ public final class PlcClient extends Link {
                 Write w;
                 while (running && (w = writes.poll()) != null) {
                     if (System.currentTimeMillis() - w.at > WRITE_MAX_AGE_MS) {
-                        addLog("書込を取り消し " + Device.name(w.code, w.no) + "（通信できず時間が経ったため）");
+                        if (!w.quiet) addLog("書込を取り消し " + Device.name(w.code, w.no) + "（通信できず時間が経ったため）");
                         continue;
                     }
                     try {
@@ -229,11 +243,11 @@ public final class PlcClient extends Link {
         String dev = Device.name(w.code, w.no);
         if (w.words != null) {
             request(writeWordsFrame(w));
-            addLog("書込 " + dev + (w.words.length == 1 ? " = " + w.words[0] : " " + w.words.length + "ワード"));
+            if (!w.quiet) addLog("書込 " + dev + (w.words.length == 1 ? " = " + w.words[0] : " " + w.words.length + "ワード"));
             mem.writeWords(w.code, w.no, w.words);
         } else {
             request(writeBitsFrame(w));
-            addLog("書込 " + dev + (w.bits.length == 1 ? (w.bits[0] ? " ON" : " OFF") : " " + w.bits.length + "点"));
+            if (!w.quiet) addLog("書込 " + dev + (w.bits.length == 1 ? (w.bits[0] ? " ON" : " OFF") : " " + w.bits.length + "点"));
             mem.writeBits(w.code, w.no, w.bits);
         }
     }

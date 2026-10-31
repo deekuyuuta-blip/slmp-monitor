@@ -40,8 +40,8 @@ public final class PlcLink {
                     // スマホから書きに行く方式では、PLCへ直接書込む
                     if (server instanceof PlcClient) {
                         PlcClient c = (PlcClient) server;
-                        if (d.bit) c.queueBits(d.code, d.number, new boolean[]{(heartbeatCount & 1) != 0});
-                        else c.queueWords(d.code, d.number, new short[]{heartbeatCount});
+                        if (d.bit) c.queueQuiet(d.code, d.number, null, new boolean[]{(heartbeatCount & 1) != 0});
+                        else c.queueQuiet(d.code, d.number, new short[]{heartbeatCount}, null);
                     }
                 } catch (IllegalArgumentException ignored) {
                 }
