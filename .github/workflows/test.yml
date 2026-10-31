@@ -3,7 +3,7 @@ name: Emulator test
 # main 以外のブランチに push したとき、エミュレータで動作確認して結果を「ci-test」に置く
 on:
   push:
-    branches-ignore: [main]
+    branches-ignore: [main, manual-fetch]
 
 permissions:
   contents: write

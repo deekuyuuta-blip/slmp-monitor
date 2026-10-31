@@ -1,0 +1,21 @@
+name: Manual fetch
+on:
+  push:
+    branches: [manual-fetch]
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: sudo apt-get install -y poppler-utils > /dev/null
+      - run: |
+          mkdir out && cd out
+          curl -sSL -o en.pdf https://dl.mitsubishielectric.com/dl/fa/document/manual/plcf/sh082625eng/sh082625engh.pdf
+          pdftotext -layout en.pdf en.txt
+          ls -la
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete ci-manual --yes --cleanup-tag -R "$GITHUB_REPOSITORY" || true
+          gh release create ci-manual out/en.txt --prerelease --latest=false --target "$GITHUB_SHA" -R "$GITHUB_REPOSITORY" --title "manual" --notes "temp"
