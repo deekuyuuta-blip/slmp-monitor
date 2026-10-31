@@ -40,7 +40,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
     private static final int COLOR_GRAY = 0xFF9E9E9E;
     private static final int COLOR_ERR = 0xFFC62828;
     private static final int COLOR_VALUE = 0xFF1565C0;
-    private static final int MENU_LOG = 1, MENU_SETTINGS = 2, MENU_HELP = 3;
+    private static final int MENU_LOG = 1, MENU_SETTINGS = 2, MENU_HELP = 3, MENU_SCAN = 4;
     private static final int REQ_SETTINGS = 10;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -507,6 +507,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         menu.add(0, MENU_LOG, 0, "通信ログ");
         menu.add(0, MENU_SETTINGS, 1, "設定");
         menu.add(0, MENU_HELP, 2, "使い方");
+        menu.add(0, MENU_SCAN, 3, "ポート探索");
         return true;
     }
 
@@ -521,6 +522,10 @@ public class MainActivity extends Activity implements PlcLink.Listener {
             openSettings();
             return true;
         }
+        if (id == MENU_SCAN) {
+            confirmScan();
+            return true;
+        }
         if (id == MENU_HELP) {
             new AlertDialog.Builder(this).setTitle("使い方")
                     .setMessage("1. スマホをPLCと同じネットワークのWi-Fiにつなぐ（IPは固定がおすすめ）\n"
@@ -533,6 +538,51 @@ public class MainActivity extends Activity implements PlcLink.Listener {
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    /** PLCがどのポートに送ってくるか調べる（交信相手の種別でポートが固定のとき用） */
+    private void confirmScan() {
+        new AlertDialog.Builder(this).setTitle("ポート探索")
+                .setMessage("1024〜9999番のUDPポートで30秒間待ち受け、PLCから届いたポート番号を調べます。\n"
+                        + "探索中は待受を止めます（返事はしません）。PLCの交信相手IPがこのスマホになっていることを確認してください。")
+                .setPositiveButton("開始", (d, w) -> runScan())
+                .setNegativeButton("キャンセル", null).show();
+    }
+
+    private void runScan() {
+        boolean wasRunning = PlcLink.isRunning();
+        if (wasRunning) PlcLink.stop();
+        TextView t = new TextView(this);
+        t.setTextSize(14);
+        t.setPadding(dp(20), dp(12), dp(20), dp(12));
+        t.setText("準備中…");
+        final AlertDialog dlg = new AlertDialog.Builder(this).setTitle("ポート探索").setView(t)
+                .setCancelable(false).setPositiveButton("閉じる", null).create();
+        dlg.show();
+        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+        new Thread(() -> {
+            try {
+                Thread.sleep(800);   // 待受の停止を待つ
+            } catch (InterruptedException ignored) {
+            }
+            java.util.Map<Integer, String> found = PortScan.run(1024, 9999, 30,
+                    text -> runOnUiThread(() -> t.setText(text)));
+            StringBuilder sb = new StringBuilder();
+            if (found.isEmpty()) {
+                sb.append("届きませんでした。\nPLCの交信相手IP・PLCの電源とリセット・スマホのWi-Fiを確認してください。");
+            } else {
+                for (java.util.Map.Entry<Integer, String> e : found.entrySet()) {
+                    sb.append("ポート ").append(e.getKey()).append("  ← ").append(e.getValue()).append("\n\n");
+                }
+                sb.append("設定の「待受ポート番号」をこの番号にしてください。");
+            }
+            runOnUiThread(() -> {
+                t.setText(sb.toString());
+                t.setTextIsSelectable(true);
+                dlg.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
+                if (wasRunning) startServer();
+            });
+        }, "port-scan").start();
     }
 
     private void showLog() {
