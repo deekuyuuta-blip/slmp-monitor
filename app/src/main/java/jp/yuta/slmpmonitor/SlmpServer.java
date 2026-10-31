@@ -155,6 +155,11 @@ public final class SlmpServer {
         while (log.size() > 200) log.pollFirst();
     }
 
+    /** 外からログに1行残す */
+    public void note(String s) {
+        addLog(s);
+    }
+
     public synchronized List<String> logLines() {
         return new ArrayList<>(log);
     }
