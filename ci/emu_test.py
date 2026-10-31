@@ -373,6 +373,35 @@ check("再起動後も設定値D100=555が残る（PLCが0で上書きされな�
 time.sleep(1.5)
 shot("after_restart_udp")
 
+# ---- 連続通信（UDP）：通常／バックグラウンド／画面オフ／Doze ----
+def soak(secs, phase):
+    subprocess.run([sys.executable, "ci/udp_soak.py", "127.0.0.1", "5000", str(secs), phase, "soak.json"])
+
+soak(90, "通常（操作画面を表示中）")
+adb("shell", "input", "keyevent", "KEYCODE_HOME")
+time.sleep(2)
+soak(45, "バックグラウンド（ホーム画面）")
+adb("shell", "am", "start", "-n", f"{PKG}/.MainActivity")
+time.sleep(2)
+adb("shell", "input", "keyevent", "KEYCODE_SLEEP")
+time.sleep(2)
+soak(45, "画面オフ")
+adb("shell", "dumpsys", "deviceidle", "force-idle")
+time.sleep(2)
+soak(45, "Doze（強制）")
+adb("shell", "dumpsys", "deviceidle", "unforce")
+adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+adb("shell", "wm", "dismiss-keyguard")
+time.sleep(2)
+try:
+    for r in json.load(open("soak.json")):
+        check(f"連続UDP {r['phase']}", r["timeouts"] == 0 and r["value_mismatch"] == 0 and r["ok_responses"] > 0, json.dumps(r, ensure_ascii=False))
+except Exception as e:
+    check("連続UDP", False, str(e))
+import shutil
+shutil.copy("soak.json", f"{OUT}/soak.json") if os.path.exists("soak.json") else None
+shot("after_soak")
+
 # 一覧画面
 adb("shell", "input", "keyevent", "KEYCODE_BACK")
 time.sleep(1)

@@ -52,11 +52,36 @@ public final class PlcLink {
     }
 
     private static android.content.SharedPreferences prefs;
+    private static android.content.Context app;
+    private static android.net.wifi.WifiManager.WifiLock wifiLock;
+
+    /** 待受中はWi-Fiの省電力を抑える（受信が数百ms遅れてPLC側がタイムアウトするのを防ぐ） */
+    @SuppressWarnings("deprecation")
+    private static void holdWifi(boolean on) {
+        try {
+            if (on) {
+                if (wifiLock == null && app != null) {
+                    android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) app.getSystemService(android.content.Context.WIFI_SERVICE);
+                    if (wm == null) return;
+                    int mode = android.os.Build.VERSION.SDK_INT >= 29
+                            ? android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                            : android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+                    wifiLock = wm.createWifiLock(mode, "slmp-monitor");
+                    wifiLock.setReferenceCounted(false);
+                }
+                if (wifiLock != null && !wifiLock.isHeld()) wifiLock.acquire();
+            } else if (wifiLock != null && wifiLock.isHeld()) {
+                wifiLock.release();
+            }
+        } catch (RuntimeException ignored) {
+        }
+    }
     private static int restoredCount = -1;
 
     /** 保存しておいたスマホ→PLCの値を戻し、以後の変更を保存する。待受開始より前に呼ぶ */
     public static void init(android.content.Context c) {
         if (prefs != null) return;
+        app = c.getApplicationContext();
         prefs = c.getApplicationContext().getSharedPreferences("slmp", android.content.Context.MODE_PRIVATE);
         restoredCount = mem.importLocal(prefs.getString("localValues", ""));
         mem.setOnLocalChange(() -> prefs.edit().putString("localValues", mem.exportLocal()).apply());
@@ -125,6 +150,7 @@ public final class PlcLink {
             main.post(() -> {
                 starting = false;
                 if (error == null) {
+                    holdWifi(true);
                     server = s;
                     serverPort = port;
                     serverPlcIp = plcIp == null ? "" : plcIp;
@@ -137,6 +163,7 @@ public final class PlcLink {
     public static void stop() {
         final SlmpServer s = server;
         server = null;
+        holdWifi(false);
         if (s != null) new Thread(s::stop, "slmp-stop").start();
         notifyListeners(null);
     }
