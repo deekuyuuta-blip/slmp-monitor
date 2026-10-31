@@ -23,7 +23,13 @@ jobs:
           python-version: '3.12'
       - name: Install libraries
         run: |
-          pip install pymcprotocol pyslmpclient 2>&1 | tail -3 | tee pip.log || true
+          for p in pymcprotocol pymelsec pyslmp slmpclient mcprotocol melsec-slmp; do
+            echo "== $p" >> pip.log
+            pip install "$p" >> pip.log 2>&1 || echo "FAILED $p" >> pip.log
+          done
+          pip list 2>/dev/null | grep -i -E "mc|slmp|melsec" >> pip.log || true
+          npm install --prefix nodelibs node-red-contrib-mcprotocol mcprotocol >> pip.log 2>&1 || echo "npm failed" >> pip.log
+          ls nodelibs/node_modules >> pip.log 2>&1 || true
       - name: Build server
         run: |
           S=app/src/main/java/jp/yuta/slmpmonitor
@@ -36,6 +42,9 @@ jobs:
           sleep 3
           python ci/verify/third_party.py 5000 2>&1 | tee res/third_party.log || true
           cp third_party.json res/ || true
+          for f in nodelibs/node_modules/node-red-contrib-mcprotocol/package.json nodelibs/node_modules/mcprotocol/package.json; do [ -f "$f" ] && cat "$f" >> res/node_info.txt; done
+          ls -R nodelibs/node_modules/node-red-contrib-mcprotocol 2>/dev/null | head -40 >> res/node_info.txt || true
+          for f in ci/verify/extra_*.js; do [ -f "$f" ] && (NODE_PATH=nodelibs/node_modules node "$f" 5000 2>&1 | tee "res/$(basename $f .js).log") || true; done
           for f in ci/verify/extra_*.py; do [ -f "$f" ] && (python "$f" 5000 2>&1 | tee "res/$(basename $f .py).log") || true; done
           sleep 1
           pkill -f RunServer || true
