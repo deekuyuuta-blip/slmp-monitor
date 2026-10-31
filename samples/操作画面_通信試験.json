@@ -1,0 +1,256 @@
+{
+ "version": 1,
+ "landscape": false,
+ "screens": [
+  {
+   "name": "運転",
+   "parts": [
+    {
+     "type": "TEXT",
+     "x": 10,
+     "y": 10,
+     "w": 340,
+     "h": 40,
+     "label": "通信試験 ①運転",
+     "textColor": "#FFFFFFFF"
+    },
+    {
+     "type": "LAMP",
+     "x": 10,
+     "y": 60,
+     "w": 165,
+     "h": 60,
+     "label": "運転中",
+     "device": "M0",
+     "onColor": "#FF2E7D32",
+     "offColor": "#FF37474F"
+    },
+    {
+     "type": "LAMP",
+     "x": 185,
+     "y": 60,
+     "w": 165,
+     "h": 60,
+     "label": "異常",
+     "device": "M1",
+     "onColor": "#FFC62828",
+     "offColor": "#FF37474F"
+    },
+    {
+     "type": "BUTTON",
+     "x": 10,
+     "y": 130,
+     "w": 165,
+     "h": 90,
+     "label": "運転",
+     "device": "M100",
+     "lampDevice": "M0",
+     "action": "MOMENTARY",
+     "minOnMs": 500,
+     "onColor": "#FF2E7D32",
+     "offColor": "#FF37474F"
+    },
+    {
+     "type": "BUTTON",
+     "x": 185,
+     "y": 130,
+     "w": 165,
+     "h": 90,
+     "label": "停止",
+     "device": "M101",
+     "action": "MOMENTARY",
+     "minOnMs": 500,
+     "onColor": "#FFC62828",
+     "offColor": "#FF37474F"
+    },
+    {
+     "type": "NUMBER",
+     "x": 10,
+     "y": 230,
+     "w": 340,
+     "h": 80,
+     "label": "現在値",
+     "device": "D0",
+     "format": "S16",
+     "decimals": 1,
+     "unit": "m/min"
+    },
+    {
+     "type": "INPUT",
+     "x": 10,
+     "y": 320,
+     "w": 340,
+     "h": 80,
+     "label": "設定値",
+     "device": "D100",
+     "format": "S16",
+     "decimals": 1,
+     "unit": "m/min",
+     "min": "0",
+     "max": "100",
+     "confirm": false
+    },
+    {
+     "type": "LAMP",
+     "x": 10,
+     "y": 410,
+     "w": 165,
+     "h": 50,
+     "label": "設定値OK",
+     "device": "M4",
+     "onColor": "#FF2E7D32",
+     "offColor": "#FFC62828",
+     "offText": "設定値範囲外"
+    },
+    {
+     "type": "BUTTON",
+     "x": 185,
+     "y": 410,
+     "w": 165,
+     "h": 50,
+     "label": "異常リセット",
+     "device": "M102",
+     "action": "MOMENTARY",
+     "minOnMs": 500,
+     "onColor": "#FFF9A825",
+     "offColor": "#FF37474F"
+    },
+    {
+     "type": "NUMBER",
+     "x": 10,
+     "y": 470,
+     "w": 340,
+     "h": 60,
+     "label": "運転回数",
+     "device": "D3",
+     "format": "S16",
+     "unit": "回"
+    },
+    {
+     "type": "SWITCH",
+     "x": 10,
+     "y": 560,
+     "w": 340,
+     "h": 60,
+     "label": "②通信確認へ",
+     "target": 1,
+     "onColor": "#FF1565C0",
+     "offColor": "#FF1565C0"
+    }
+   ]
+  },
+  {
+   "name": "通信確認",
+   "parts": [
+    {
+     "type": "TEXT",
+     "x": 10,
+     "y": 10,
+     "w": 340,
+     "h": 40,
+     "label": "通信試験 ②通信確認",
+     "textColor": "#FFFFFFFF"
+    },
+    {
+     "type": "LAMP",
+     "x": 10,
+     "y": 60,
+     "w": 165,
+     "h": 60,
+     "label": "1秒点滅",
+     "device": "M2",
+     "onColor": "#FFF9A825",
+     "offColor": "#FF37474F"
+    },
+    {
+     "type": "LAMP",
+     "x": 185,
+     "y": 60,
+     "w": 165,
+     "h": 60,
+     "label": "スマホ通信正常",
+     "device": "M3",
+     "onColor": "#FF2E7D32",
+     "offColor": "#FFC62828",
+     "offText": "スマホ通信異常"
+    },
+    {
+     "type": "NUMBER",
+     "x": 10,
+     "y": 130,
+     "w": 340,
+     "h": 70,
+     "label": "PLCカウンタ（1秒ごと+1）",
+     "device": "D1",
+     "format": "S16",
+     "unit": "秒"
+    },
+    {
+     "type": "INPUT",
+     "x": 10,
+     "y": 210,
+     "w": 165,
+     "h": 80,
+     "label": "エコー送信",
+     "device": "D101",
+     "format": "S16",
+     "min": "-32768",
+     "max": "32767"
+    },
+    {
+     "type": "NUMBER",
+     "x": 185,
+     "y": 210,
+     "w": 165,
+     "h": 80,
+     "label": "エコー受信",
+     "device": "D2",
+     "format": "S16"
+    },
+    {
+     "type": "NUMBER",
+     "x": 10,
+     "y": 300,
+     "w": 340,
+     "h": 70,
+     "label": "PLCが受けた設定値",
+     "device": "D4",
+     "format": "S16",
+     "decimals": 1,
+     "unit": "m/min"
+    },
+    {
+     "type": "NUMBER",
+     "x": 10,
+     "y": 380,
+     "w": 340,
+     "h": 70,
+     "label": "32bitカウンタ",
+     "device": "D10",
+     "format": "S32"
+    },
+    {
+     "type": "NUMBER",
+     "x": 10,
+     "y": 460,
+     "w": 340,
+     "h": 70,
+     "label": "ハートビート（スマホ→PLC）",
+     "device": "D119",
+     "format": "S16"
+    },
+    {
+     "type": "SWITCH",
+     "x": 10,
+     "y": 560,
+     "w": 340,
+     "h": 60,
+     "label": "①運転へ戻る",
+     "target": 0,
+     "onColor": "#FF1565C0",
+     "offColor": "#FF1565C0"
+    }
+   ]
+  }
+ ]
+}
