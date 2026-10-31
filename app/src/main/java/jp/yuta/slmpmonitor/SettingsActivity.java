@@ -20,7 +20,8 @@ public class SettingsActivity extends Activity {
     private static final int COLOR_WARN = 0xFFE65100;
 
     private ItemStore store;
-    private EditText plcIp, port, heartbeat, staleSec;
+    private EditText plcIp, port, heartbeat, staleSec, plcPort, pollMs;
+    private android.widget.RadioButton modeClient, modeServer, protoUdp, protoTcp;
     private CheckBox autoStart, openPanel;
     private TextView subnetWarn;
 
@@ -38,7 +39,7 @@ public class SettingsActivity extends Activity {
         section(f, "PLC");
         plcIp = field(f, "PLCのIPアドレス", "例: 192.168.3.39",
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI,
-                "R04CPU（内蔵Ethernet）のIPアドレス。入力すると、このIPからの接続だけ受け付けます。空欄なら制限しません。");
+                "PLC（内蔵Ethernet）のIPアドレス。読みに行く方式ではこのIPへ接続します。待ち受ける方式では、このIPからの接続だけ受け付けます。");
         plcIp.setText(store.plcIp());
         subnetWarn = new TextView(this);
         subnetWarn.setTextSize(12);
@@ -48,7 +49,40 @@ public class SettingsActivity extends Activity {
             if (!has) checkSubnet();
         });
 
-        section(f, "スマホ（SLMP対応機器として待受）");
+        section(f, "通信方式");
+        android.widget.RadioGroup mg = new android.widget.RadioGroup(this);
+        modeClient = new android.widget.RadioButton(this);
+        modeClient.setId(android.view.View.generateViewId());
+        modeClient.setText("スマホからPLCへ読み書きしに行く（おすすめ）");
+        modeServer = new android.widget.RadioButton(this);
+        modeServer.setId(android.view.View.generateViewId());
+        modeServer.setText("PLCのシンプルCPU通信を待ち受ける");
+        mg.addView(modeClient);
+        mg.addView(modeServer);
+        f.addView(mg);
+        (store.clientMode() ? modeClient : modeServer).setChecked(true);
+
+        section(f, "スマホから読みに行く方式");
+        plcPort = field(f, "PLCのSLMPポート番号", "例: 5010", InputType.TYPE_CLASS_NUMBER,
+                "GX Works3「Ethernetポート → 基本設定 → 相手機器接続構成設定」で追加したSLMP接続機器のポート番号（交信データコードはバイナリ）。");
+        plcPort.setText(String.valueOf(store.plcPort()));
+        android.widget.RadioGroup pg = new android.widget.RadioGroup(this);
+        pg.setOrientation(LinearLayout.HORIZONTAL);
+        protoUdp = new android.widget.RadioButton(this);
+        protoUdp.setId(android.view.View.generateViewId());
+        protoUdp.setText("UDP（おすすめ）");
+        protoTcp = new android.widget.RadioButton(this);
+        protoTcp.setId(android.view.View.generateViewId());
+        protoTcp.setText("TCP");
+        pg.addView(protoUdp);
+        pg.addView(protoTcp);
+        f.addView(pg);
+        (store.plcUdp() ? protoUdp : protoTcp).setChecked(true);
+        pollMs = field(f, "読出し周期（ms）", "例: 200", InputType.TYPE_CLASS_NUMBER,
+                "この間隔で、一覧と操作画面のデバイスをPLCから読みます（50〜5000）。応答がなければ0.3秒で送り直します。");
+        pollMs.setText(String.valueOf(store.pollMs()));
+
+        section(f, "シンプルCPU通信を待ち受ける方式");
         TextView phone = new TextView(this);
         phone.setText("このスマホのIP: " + NetUtil.phoneIps()
                 + "\nPLCのシンプルCPU通信設定で、交信先IPにこのアドレスを入れてください。");
@@ -62,10 +96,10 @@ public class SettingsActivity extends Activity {
         section(f, "安全・監視");
         heartbeat = field(f, "ハートビート デバイス", "例: D199（空欄でなし）",
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS,
-                "1秒ごとに+1します（ビットなら反転）。PLCで読出して値が変わらなくなったら、スマホ停止とみなしてください。");
+                "1秒ごとに+1します（ビットなら反転）。読みに行く方式ではPLCのこのデバイスへ直接書込みます。値が変わらなくなったら、スマホ停止とみなしてください。");
         heartbeat.setText(store.heartbeat());
         staleSec = field(f, "通信なし判定（秒）", "例: 3", InputType.TYPE_CLASS_NUMBER,
-                "この秒数PLCから要求がなければ「通信なし」と表示し、受信値を灰色にします。");
+                "この秒数PLCとやり取りできなければ「通信なし」と表示し、受信値を灰色にします。");
         staleSec.setText(String.valueOf(store.staleSec()));
 
         section(f, "起動");
@@ -162,6 +196,33 @@ public class SettingsActivity extends Activity {
             staleSec.requestFocus();
             return;
         }
+        int pp;
+        try {
+            pp = Integer.parseInt(plcPort.getText().toString().trim());
+            if (pp < 1 || pp > 65535) throw new NumberFormatException();
+        } catch (NumberFormatException e) {
+            plcPort.setError("1〜65535で入力してください");
+            plcPort.requestFocus();
+            return;
+        }
+        int pm;
+        try {
+            pm = Integer.parseInt(pollMs.getText().toString().trim());
+            if (pm < 50 || pm > 5000) throw new NumberFormatException();
+        } catch (NumberFormatException e) {
+            pollMs.setError("50〜5000で入力してください");
+            pollMs.requestFocus();
+            return;
+        }
+        if (modeClient.isChecked() && !NetUtil.isIpv4(ip)) {
+            plcIp.setError("スマホから読みに行く方式では、PLCのIPアドレスが必要です");
+            plcIp.requestFocus();
+            return;
+        }
+        store.saveClientMode(modeClient.isChecked());
+        store.savePlcPort(pp);
+        store.savePlcUdp(protoUdp.isChecked());
+        store.savePollMs(pm);
         store.savePlcIp(ip);
         store.savePort(p);
         store.saveHeartbeat(hb);

@@ -236,7 +236,7 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
         } else if (!PlcLink.isRunning()) {
             setStatus("● 待受停止中（タップで開始）", C_ERR);
         } else if (PlcLink.server().lastRequestMillis == 0) {
-            setStatus("● PLCからの接続待ち  ポート " + PlcLink.serverPort(), C_GRAY);
+            setStatus("● " + PlcLink.server().waitingText() + (PlcLink.isClient() ? "" : "  ポート " + PlcLink.serverPort()), C_GRAY);
         } else if (!fresh) {
             long age = (System.currentTimeMillis() - PlcLink.server().lastRequestMillis) / 1000;
             setStatus("● PLCから通信なし " + age + "秒", C_ERR);

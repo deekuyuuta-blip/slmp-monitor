@@ -32,6 +32,21 @@ final class ItemStore {
     String heartbeat() { return prefs.getString("heartbeat", ""); }
     void saveHeartbeat(String dev) { prefs.edit().putString("heartbeat", dev).apply(); }
 
+    /** true: スマホからPLCへ読み書きしに行く（SLMPクライアント）／false: PLCからのシンプルCPU通信を待ち受け */
+    boolean clientMode() { return prefs.getInt("clientMode", 0) == 1; }
+    void saveClientMode(boolean on) { prefs.edit().putInt("clientMode", on ? 1 : 0).apply(); }
+
+    /** PLC側のSLMP受付ポート（スマホから読みに行く方式） */
+    int plcPort() { return prefs.getInt("plcPort", 5010); }
+    void savePlcPort(int p) { prefs.edit().putInt("plcPort", p).apply(); }
+
+    boolean plcUdp() { return prefs.getInt("plcUdp", 1) == 1; }
+    void savePlcUdp(boolean udp) { prefs.edit().putInt("plcUdp", udp ? 1 : 0).apply(); }
+
+    /** 読出し周期（ms） */
+    int pollMs() { return prefs.getInt("pollMs", 200); }
+    void savePollMs(int ms) { prefs.edit().putInt("pollMs", ms).apply(); }
+
     boolean openPanelOnStart() { return prefs.getInt("openPanel", 0) == 1; }
     void saveOpenPanelOnStart(boolean on) { prefs.edit().putInt("openPanel", on ? 1 : 0).apply(); }
 

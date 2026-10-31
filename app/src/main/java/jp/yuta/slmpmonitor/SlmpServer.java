@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * R04CPU等のシンプルCPU通信から来る一括読出し(0401)／一括書込み(1401)に応答する。
  * サブコマンド 0000/0001（Q互換）と 0002/0003（iQ-R形式）に対応。
  */
-public final class SlmpServer {
+public final class SlmpServer extends Link {
 
     private static final int MAX_WORDS = 960;
     private static final int MAX_BITS = 7168;
@@ -42,9 +42,6 @@ public final class SlmpServer {
     private final DeviceMemory mem;
     private final int port;
     private final Set<Socket> clients = Collections.synchronizedSet(new HashSet<>());
-    private final ArrayDeque<String> log = new ArrayDeque<>();
-    private String lastLogBody;
-    private int lastLogRepeat;
 
     private volatile ServerSocket server;
     private volatile DatagramSocket udp;
@@ -53,8 +50,6 @@ public final class SlmpServer {
     private static final long UDP_PEER_MS = 5000;
     private volatile boolean running;
 
-    public final AtomicLong requestCount = new AtomicLong();
-    public volatile long lastRequestMillis;   // System.currentTimeMillis()
 
     private final String allowedIp;
 
@@ -70,6 +65,7 @@ public final class SlmpServer {
     }
 
     /** 接続中の相手IP一覧 */
+    @Override
     public List<String> clientIps() {
         List<String> l = new ArrayList<>();
         synchronized (clients) {
@@ -87,6 +83,7 @@ public final class SlmpServer {
         return l;
     }
 
+    @Override
     public void start() throws IOException {
         ServerSocket ss = new ServerSocket();
         ss.setReuseAddress(true);
@@ -112,6 +109,7 @@ public final class SlmpServer {
         u.start();
     }
 
+    @Override
     public void stop() {
         running = false;
         try {
@@ -139,29 +137,9 @@ public final class SlmpServer {
         return clientIps().size();
     }
 
-    // ---- ログ（同じ内容が続くときはまとめる） ----
-
-    private synchronized void addLog(String body) {
-        String time = new SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(new Date());
-        if (body.equals(lastLogBody) && !log.isEmpty()) {
-            lastLogRepeat++;
-            log.pollLast();
-            log.addLast(time + " " + body + "  ×" + lastLogRepeat);
-            return;
-        }
-        lastLogBody = body;
-        lastLogRepeat = 1;
-        log.addLast(time + " " + body);
-        while (log.size() > 200) log.pollFirst();
-    }
-
-    /** 外からログに1行残す */
-    public void note(String s) {
-        addLog(s);
-    }
-
-    public synchronized List<String> logLines() {
-        return new ArrayList<>(log);
+    @Override
+    public String waitingText() {
+        return "PLCからの接続待ち";
     }
 
     // ---- 接続処理 ----

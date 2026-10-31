@@ -19,7 +19,7 @@ public final class PlcLink {
 
     public static final DeviceMemory mem = new DeviceMemory();
 
-    private static SlmpServer server;
+    private static Link server;
     private static int serverPort;
     private static String serverPlcIp = "";
     private static boolean starting;
@@ -37,6 +37,12 @@ public final class PlcLink {
                     heartbeatCount++;
                     if (d.bit) mem.writeBits(d.code, d.number, new boolean[]{(heartbeatCount & 1) != 0});
                     else mem.writeWords(d.code, d.number, new short[]{heartbeatCount});
+                    // スマホから書きに行く方式では、PLCへ直接書込む
+                    if (server instanceof PlcClient) {
+                        PlcClient c = (PlcClient) server;
+                        if (d.bit) c.queueBits(d.code, d.number, new boolean[]{(heartbeatCount & 1) != 0});
+                        else c.queueWords(d.code, d.number, new short[]{heartbeatCount});
+                    }
                 } catch (IllegalArgumentException ignored) {
                 }
             }
@@ -121,7 +127,7 @@ public final class PlcLink {
                         if (server != null && !network.equals(boundNetwork)) {
                             final int port = serverPort;
                             final String ip = serverPlcIp;
-                            final SlmpServer old = server;
+                            final Link old = server;
                             old.note("Wi-Fiが切り替わったので待受をやり直します");
                             server = null;
                             starting = true;
@@ -172,6 +178,18 @@ public final class PlcLink {
         app = c.getApplicationContext();
         prefs = c.getApplicationContext().getSharedPreferences("slmp", android.content.Context.MODE_PRIVATE);
         restoredCount = mem.importLocal(prefs.getString("localValues", ""));
+        // 画面から書いた値を、スマホから書きに行く方式ならPLCへ送る
+        mem.setWriteHook(new DeviceMemory.WriteHook() {
+            @Override
+            public void words(int code, int no, short[] values) {
+                if (server instanceof PlcClient) ((PlcClient) server).queueWords(code, no, values);
+            }
+
+            @Override
+            public void bits(int code, int no, boolean[] values) {
+                if (server instanceof PlcClient) ((PlcClient) server).queueBits(code, no, values);
+            }
+        });
         mem.setOnLocalChange(() -> prefs.edit().putString("localValues", mem.exportLocal()).apply());
     }
 
@@ -192,7 +210,7 @@ public final class PlcLink {
         for (Listener l : new ArrayList<>(listeners)) l.onServerStateChanged(error);
     }
 
-    public static SlmpServer server() {
+    public static Link server() {
         return server;
     }
 
@@ -218,7 +236,7 @@ public final class PlcLink {
 
     /** 直近 staleMs 以内にPLCから要求があれば true */
     public static boolean isFresh(long staleMs) {
-        SlmpServer s = server;
+        Link s = server;
         if (s == null || s.lastRequestMillis == 0) return false;
         return System.currentTimeMillis() - s.lastRequestMillis <= staleMs;
     }
@@ -226,7 +244,14 @@ public final class PlcLink {
     public static void start(final int port, final String plcIp) {
         if (server != null || starting) return;
         starting = true;
-        final SlmpServer s = new SlmpServer(mem, port, plcIp);
+        final String sig = configSig(port, plcIp);
+        final Link s;
+        if (prefs != null && prefs.getInt("clientMode", 0) == 1) {
+            s = new PlcClient(app, mem, plcIp, prefs.getInt("plcPort", 5010),
+                    prefs.getInt("plcUdp", 1) == 1, prefs.getInt("pollMs", 200));
+        } else {
+            s = new SlmpServer(mem, port, plcIp);
+        }
         bindToWifi(true);   // ソケットを作る前に（作ったソケットがWi-Fiに固定される）
         watchWifi(true);
         final String note = bindNote;
@@ -246,6 +271,7 @@ public final class PlcLink {
                     server = s;
                     serverPort = port;
                     serverPlcIp = plcIp == null ? "" : plcIp;
+                    serverSig = sig;
                     if (app != null) PlcService.start(app);
                 }
                 notifyListeners(error == null ? null : "待受を開始できません（ポート " + port + "）: " + error);
@@ -254,7 +280,7 @@ public final class PlcLink {
     }
 
     public static void stop() {
-        final SlmpServer s = server;
+        final Link s = server;
         server = null;
         holdWifi(false);
         watchWifi(false);
@@ -264,11 +290,25 @@ public final class PlcLink {
         notifyListeners(null);
     }
 
+    private static String serverSig = "";
+
+    /** 通信方式・ポート・IPなどをまとめた文字列（変わったらやり直す） */
+    private static String configSig(int port, String plcIp) {
+        String m = prefs == null ? "" : prefs.getInt("clientMode", 0) + "/" + prefs.getInt("plcPort", 5010) + "/"
+                + prefs.getInt("plcUdp", 1) + "/" + prefs.getInt("pollMs", 200);
+        return port + "/" + plcIp + "/" + m;
+    }
+
+    /** 今の通信がスマホから読みに行く方式なら true */
+    public static boolean isClient() {
+        return server instanceof PlcClient;
+    }
+
     /** 設定が変わっていれば待受をやり直す */
     public static void restartIfChanged(final int port, final String plcIp) {
         if (server == null) return;
-        if (serverPort == port && serverPlcIp.equals(plcIp)) return;
-        final SlmpServer old = server;
+        if (serverSig.equals(configSig(port, plcIp))) return;
+        final Link old = server;
         server = null;
         starting = true;
         new Thread(() -> {

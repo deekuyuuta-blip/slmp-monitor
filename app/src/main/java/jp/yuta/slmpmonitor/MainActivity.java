@@ -89,7 +89,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         // 開始ボタン・設定ボタン
         LinearLayout r1 = hRow();
         startBtn = new Button(this);
-        startBtn.setText("待受開始");
+        startBtn.setText("通信開始");
         startBtn.setOnClickListener(v -> {
             if (PlcLink.isRunning()) stopServer();
             else startServer();
@@ -154,8 +154,8 @@ public class MainActivity extends Activity implements PlcLink.Listener {
     private void rebuildRows() {
         listLayout.removeAllViews();
         rows.clear();
-        addSection("PLC → スマホ（PLCがシンプルCPU通信で書込む）", false);
-        addSection("スマホ → PLC（PLCがシンプルCPU通信で読出す）", true);
+        addSection("PLC → スマホ（表示のみ）", false);
+        addSection("スマホ → PLC（スマホで値を変える）", true);
         if (items.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText("「＋ 追加」でデバイスを登録してください。行を長押しで編集・削除。");
@@ -257,7 +257,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         startBtn.setEnabled(!PlcLink.isStarting());
         if (error != null) toast(error);
         boolean on = PlcLink.isRunning();
-        startBtn.setText(on ? "待受停止" : "待受開始");
+        startBtn.setText(on ? "通信停止" : "通信開始");
         if (on) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         } else {
@@ -280,16 +280,19 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         updateIpText();
         PlcLink.setHeartbeatDevice(store.heartbeat());
         // 待受中にポートやPLC IPが変わったら、待受をやり直す
-        if (PlcLink.isRunning() && (PlcLink.serverPort() != store.port() || !PlcLink.serverPlcIp().equals(store.plcIp()))) {
-            startBtn.setEnabled(false);
+        if (PlcLink.isRunning()) {
+            Link before = PlcLink.server();
             PlcLink.restartIfChanged(store.port(), store.plcIp());
-            toast("新しい設定で待受をやり直します");
+            if (PlcLink.server() != before) {
+                startBtn.setEnabled(false);
+                toast("新しい設定で通信をやり直します");
+            }
         }
     }
 
     private void updateStatusAndValues() {
         boolean fresh = false;
-        SlmpServer server = PlcLink.server();
+        Link server = PlcLink.server();
         if (server == null) {
             setStatus(PlcLink.isStarting() ? "待受を開始しています…" : "停止中", COLOR_GRAY);
         } else {
@@ -298,12 +301,12 @@ public class MainActivity extends Activity implements PlcLink.Listener {
             List<String> peers = server.clientIps();
             String who = peers.isEmpty() ? "PLC未接続" : "PLC " + android.text.TextUtils.join(", ", peers);
             if (last == 0) {
-                setStatus("PLCからの接続待ち（" + who + "）", COLOR_GRAY);
+                setStatus(server.waitingText() + "（" + who + "）", COLOR_GRAY);
             } else if (age > store.staleSec() * 1000L) {
-                setStatus("PLCから通信なし " + (age / 1000) + "秒（" + who + "）", COLOR_ERR);
+                setStatus((PlcLink.isClient() ? "PLCから応答なし " : "PLCから通信なし ") + (age / 1000) + "秒（" + who + "）", COLOR_ERR);
             } else {
                 fresh = true;
-                setStatus("通信中  " + who + " ／ 受信 " + server.requestCount.get() + "回", COLOR_ON);
+                setStatus("通信中  " + who + " ／ " + (PlcLink.isClient() ? "読出 " : "受信 ") + server.requestCount.get() + "回", COLOR_ON);
             }
         }
         for (Row r : rows) {
@@ -346,7 +349,9 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         String plc = store.plcIp();
         String warn = (!plc.isEmpty() && !NetUtil.sameSubnet24(plc)) ? "\n※ スマホと別のネットワークのようです" : "";
         ipText.setText("PLC: " + (plc.isEmpty() ? "未設定（接続元を制限しない）" : plc)
-                + "　待受ポート: " + store.port()
+                + (store.clientMode()
+                ? "：" + store.plcPort() + "（" + (store.plcUdp() ? "UDP" : "TCP") + "）　スマホから読みに行く"
+                : "　待受ポート: " + store.port() + "（シンプルCPU通信）")
                 + "\nこのスマホのIP: " + NetUtil.phoneIps() + warn);
     }
 
@@ -465,7 +470,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         f.addView(sp);
 
         final CheckBox w = new CheckBox(this);
-        w.setText("スマホ → PLC（スマホで値を変え、PLCが読出す）");
+        w.setText("スマホ → PLC（スマホで値を変える）");
         f.addView(w);
 
         if (existing != null) {

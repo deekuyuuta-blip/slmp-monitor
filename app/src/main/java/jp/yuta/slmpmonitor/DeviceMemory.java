@@ -21,6 +21,29 @@ public final class DeviceMemory {
     private final Set<Long> localBitKeys = new HashSet<>();
     private volatile Runnable onLocalChange;
 
+    /** 画面から書いたときに呼ばれる（スマホからPLCへ書きに行く方式で使う） */
+    public interface WriteHook {
+        void words(int code, int no, short[] values);
+
+        void bits(int code, int no, boolean[] values);
+    }
+
+    private volatile WriteHook writeHook;
+
+    public void setWriteHook(WriteHook h) {
+        writeHook = h;
+    }
+
+    private void hookWords(int code, int no, short[] v) {
+        WriteHook h = writeHook;
+        if (h != null) h.words(code, no, v.clone());
+    }
+
+    private void hookBits(int code, int no, boolean[] v) {
+        WriteHook h = writeHook;
+        if (h != null) h.bits(code, no, v.clone());
+    }
+
     public void setOnLocalChange(Runnable r) {
         onLocalChange = r;
     }
@@ -97,6 +120,7 @@ public final class DeviceMemory {
                 else localWordKeys.add(key(code, no + i));
             }
         }
+        hookWords(code, no, values);
         localChanged();
     }
 
@@ -105,6 +129,7 @@ public final class DeviceMemory {
             writeBits(code, no, values);
             for (int i = 0; i < values.length; i++) localBitKeys.add(key(code, no + i));
         }
+        hookBits(code, no, values);
         localChanged();
     }
 
@@ -115,6 +140,7 @@ public final class DeviceMemory {
             writeBits(code, no, values);
             for (int i = 0; i < values.length; i++) if (localBitKeys.contains(key(code, no + i))) saved = true;
         }
+        hookBits(code, no, values);
         if (saved) localChanged();
     }
 
