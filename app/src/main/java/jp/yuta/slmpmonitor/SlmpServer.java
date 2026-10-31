@@ -205,12 +205,13 @@ public final class SlmpServer {
                     continue;
                 }
                 int n = p.getLength();
-                if (n < 9 || (buf[0] & 0xFF) != 0x50 || buf[1] != 0x00) {
-                    addLog(ip + " UDP: 3Eフレーム以外を受信（交信データコードがバイナリか確認）");
+                int hl = headerLength(buf, n);   // 3E=9, 4E=13
+                if (hl < 0) {
+                    addLog(ip + " UDP: 3E/4Eフレーム以外を受信 " + hex(buf, Math.min(n, 8)));
                     continue;
                 }
-                int len = u16(buf, 7);
-                if (9 + len > n) {
+                int len = u16(buf, hl - 2);
+                if (hl + len > n) {
                     addLog(ip + " UDP: データ長が不正");
                     continue;
                 }
@@ -219,9 +220,9 @@ public final class SlmpServer {
                     Long last = udpPeers.put(ip, System.currentTimeMillis());
                     first = last == null || System.currentTimeMillis() - last > UDP_PEER_MS;
                 }
-                if (first) addLog("PLC受信開始 " + ip + "（UDP）");
-                byte[] h = java.util.Arrays.copyOfRange(buf, 0, 9);
-                byte[] body = java.util.Arrays.copyOfRange(buf, 9, 9 + len);
+                if (first) addLog("PLC受信開始 " + ip + "（UDP・" + (hl == 13 ? "4E" : "3E") + "フレーム）");
+                byte[] h = java.util.Arrays.copyOfRange(buf, 0, hl);
+                byte[] body = java.util.Arrays.copyOfRange(buf, hl, hl + len);
                 byte[] r = handle(ip, h, body);
                 udp.send(new DatagramPacket(r, r.length, p.getAddress(), p.getPort()));
             } catch (IOException e) {
@@ -243,13 +244,19 @@ public final class SlmpServer {
             InputStream in = new BufferedInputStream(s.getInputStream());
             OutputStream out = s.getOutputStream();
             while (running) {
-                byte[] h = readFully(in, 9, true);
-                if (h == null) break;   // 相手が切断
-                if ((h[0] & 0xFF) != 0x50 || h[1] != 0x00) {
-                    addLog(peer + " 3Eフレーム以外を受信（交信データコードがバイナリか確認）");
+                byte[] sh = readFully(in, 2, true);
+                if (sh == null) break;   // 相手が切断
+                int hl = headerLength(new byte[]{sh[0], sh[1], 0, 0, 0, 0}, 13);
+                if (hl < 0) {
+                    addLog(peer + " 3E/4Eフレーム以外を受信 " + hex(sh, 2));
                     break;
                 }
-                int len = u16(h, 7);
+                byte[] rest = readFully(in, hl - 2, false);
+                byte[] h = new byte[hl];
+                h[0] = sh[0];
+                h[1] = sh[1];
+                System.arraycopy(rest, 0, h, 2, hl - 2);
+                int len = u16(h, hl - 2);
                 byte[] body = readFully(in, len, false);
                 out.write(handle(peer, h, body));
                 out.flush();
@@ -277,6 +284,22 @@ public final class SlmpServer {
         int sub = u16(body, 4);
         boolean iqr = sub == 0x0002 || sub == 0x0003;
         boolean bitUnit = sub == 0x0001 || sub == 0x0003;
+        if (cmd == 0x0101 && sub == 0x0000) {
+            // CPU型名読出し（相手がCPUかを確かめに来ることがある）
+            byte[] d = new byte[18];
+            byte[] name = "R04CPU          ".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+            System.arraycopy(name, 0, d, 0, 16);
+            d[16] = 0x00;
+            d[17] = 0x48;   // R04CPU の型名コード 4800h
+            addLog(peer + " 型名読出し → R04CPU");
+            return response(h, END_OK, d, cmd, sub);
+        }
+        if (cmd == 0x0619 && sub == 0x0000) {
+            // 折返しテスト：受け取ったデータをそのまま返す
+            byte[] d = java.util.Arrays.copyOfRange(body, 6, body.length);
+            addLog(peer + " 折返しテスト");
+            return response(h, END_OK, d, cmd, sub);
+        }
         if ((cmd != 0x0401 && cmd != 0x1401) || sub > 0x0003) {
             addLog(String.format(Locale.ROOT, "%s 未対応コマンド %04X/%04X", peer, cmd, sub));
             return response(h, END_COMMAND, null, cmd, sub);
@@ -345,18 +368,41 @@ public final class SlmpServer {
         }
     }
 
-    /** 応答: D0 00 + 要求と同じ ネットワーク/PC/I/O/局番 + データ長 + 終了コード + データ */
+    /** 先頭がサブヘッダ 50 00（3E）なら9、54 00（4E）なら13、それ以外は -1 */
+    private static int headerLength(byte[] b, int n) {
+        if (n >= 9 && (b[0] & 0xFF) == 0x50 && b[1] == 0x00) return 9;
+        if (n >= 13 && (b[0] & 0xFF) == 0x54 && b[1] == 0x00) return 13;
+        return -1;
+    }
+
+    private static String hex(byte[] b, int n) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < n; i++) sb.append(String.format(Locale.ROOT, "%02X ", b[i] & 0xFF));
+        return sb.toString().trim();
+    }
+
+    /**
+     * 応答。3E: D0 00 / 4E: D4 00 + シリアル番号 + 00 00、
+     * 続けて要求と同じ ネットワーク/PC/I/O/局番 + データ長 + 終了コード + データ
+     */
     private static byte[] response(byte[] h, int end, byte[] data, int cmd, int sub) {
         ByteArrayOutputStream b = new ByteArrayOutputStream();
-        b.write(0xD0);
-        b.write(0x00);
-        b.write(h, 2, 5);
+        int r = h.length - 7;   // ネットワーク番号の位置（3E=2, 4E=6）
+        if (r == 6) {
+            b.write(0xD4);
+            b.write(0x00);
+            b.write(h, 2, 4);   // シリアル番号 + 00 00 をそのまま返す
+        } else {
+            b.write(0xD0);
+            b.write(0x00);
+        }
+        b.write(h, r, 5);
         byte[] payload;
         if (end == END_OK) {
             payload = data == null ? new byte[0] : data;
         } else {
             // 異常時：エラー情報（要求元のネットワーク/PC/I/O/局番 + コマンド + サブコマンド）
-            payload = new byte[]{h[2], h[3], h[4], h[5], h[6],
+            payload = new byte[]{h[r], h[r + 1], h[r + 2], h[r + 3], h[r + 4],
                     (byte) cmd, (byte) (cmd >> 8), (byte) sub, (byte) (sub >> 8)};
         }
         int len = 2 + payload.length;
