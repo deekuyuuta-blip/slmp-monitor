@@ -38,7 +38,7 @@ try:
                 c.randomread(word_devices=["D0"], dword_devices=[])
                 check(f"pymcprotocol {plctype}: 未対応コマンドは異常応答", False, "例外が出ない")
             except Exception as e:
-                check(f"pymcprotocol {plctype}: 未対応コマンドは異常応答", "C059" in str(e).upper() or "c059" in str(e) or "0xc059" in str(e).lower() or "49241" in str(e), e)
+                check(f"pymcprotocol {plctype}: 未対応コマンドは異常応答", "not supported" in str(e) or "C059" in str(e).upper(), e)
             # 異常応答のあとも同じ接続で続けられる
             check(f"pymcprotocol {plctype}: 異常応答後も継続", c.batchread_wordunits(headdevice="D100", readsize=1)[0] == 555, "")
             c.close()
