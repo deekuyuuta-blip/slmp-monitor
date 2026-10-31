@@ -187,6 +187,8 @@ public final class SlmpServer {
                 t.start();
             } catch (IOException e) {
                 if (running) addLog("待受エラー: " + e.getMessage());
+            } catch (Throwable e) {
+                if (running) addLog("待受処理エラー: " + e.getClass().getSimpleName() + " " + e.getMessage());
             }
         }
     }
@@ -224,6 +226,13 @@ public final class SlmpServer {
                 udp.send(new DatagramPacket(r, r.length, p.getAddress(), p.getPort()));
             } catch (IOException e) {
                 if (running) addLog("UDPエラー: " + e.getMessage());
+                if (udp.isClosed()) {
+                    if (running) addLog("UDPの待受が閉じられました（待受停止→開始でやり直してください）");
+                    break;
+                }
+            } catch (Throwable e) {
+                // 想定外のエラーでも受信を止めない（止まるとPLCからは「返事なし」になる）
+                if (running) addLog("UDP処理エラー: " + e.getClass().getSimpleName() + " " + e.getMessage());
             }
         }
     }
@@ -247,6 +256,8 @@ public final class SlmpServer {
             }
         } catch (IOException e) {
             if (running) addLog(peer + " 通信エラー: " + e.getMessage());
+        } catch (Throwable e) {
+            if (running) addLog(peer + " 処理エラー: " + e.getClass().getSimpleName() + " " + e.getMessage());
         } finally {
             clients.remove(s);
             try {

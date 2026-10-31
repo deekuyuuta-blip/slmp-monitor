@@ -75,6 +75,11 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         super.onCreate(savedInstanceState);
         store = new ItemStore(getSharedPreferences("slmp", MODE_PRIVATE));
         PlcLink.init(this);
+        // 待受中の通知（常駐サービス）を出すため
+        if (android.os.Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1);
+        }
         items.addAll(store.loadItems());
 
         LinearLayout root = new LinearLayout(this);

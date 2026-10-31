@@ -78,7 +78,9 @@ public final class PlcLink {
             android.net.Network wifi = null;
             for (android.net.Network n : cm.getAllNetworks()) {
                 android.net.NetworkCapabilities c = cm.getNetworkCapabilities(n);
-                if (c != null && (c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+                // VPNは下にあるWi-Fiの種別も名乗るので除外する（VPN側に固定するとPLCと話せない）
+                if (c != null && !c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)
+                        && (c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
                         || c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET))) {
                     wifi = n;
                     break;
@@ -120,6 +122,7 @@ public final class PlcLink {
                             final int port = serverPort;
                             final String ip = serverPlcIp;
                             final SlmpServer old = server;
+                            old.note("Wi-Fiが切り替わったので待受をやり直します");
                             server = null;
                             starting = true;
                             new Thread(() -> {
@@ -243,6 +246,7 @@ public final class PlcLink {
                     server = s;
                     serverPort = port;
                     serverPlcIp = plcIp == null ? "" : plcIp;
+                    if (app != null) PlcService.start(app);
                 }
                 notifyListeners(error == null ? null : "待受を開始できません（ポート " + port + "）: " + error);
             });
@@ -255,6 +259,7 @@ public final class PlcLink {
         holdWifi(false);
         watchWifi(false);
         bindToWifi(false);
+        if (app != null) PlcService.stop(app);
         if (s != null) new Thread(s::stop, "slmp-stop").start();
         notifyListeners(null);
     }
