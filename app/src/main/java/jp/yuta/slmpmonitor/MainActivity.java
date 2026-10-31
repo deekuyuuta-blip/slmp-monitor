@@ -31,7 +31,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * スマホを「SLMP対応機器」として待ち受け、R04CPU等のシンプルCPU通信で
+ * スマホからPLCへSLMPで読み書きしに行き、
  * PLC→スマホ（PLCの書込み）・スマホ→PLC（PLCの読出し）を行う。
  */
 public class MainActivity extends Activity implements PlcLink.Listener {
@@ -40,7 +40,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
     private static final int COLOR_GRAY = 0xFF9E9E9E;
     private static final int COLOR_ERR = 0xFFC62828;
     private static final int COLOR_VALUE = 0xFF1565C0;
-    private static final int MENU_LOG = 1, MENU_SETTINGS = 2, MENU_HELP = 3, MENU_SCAN = 4;
+    private static final int MENU_LOG = 1, MENU_SETTINGS = 2, MENU_HELP = 3;
     private static final int REQ_SETTINGS = 10;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -75,7 +75,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         super.onCreate(savedInstanceState);
         store = new ItemStore(getSharedPreferences("slmp", MODE_PRIVATE));
         PlcLink.init(this);
-        // 待受中の通知（常駐サービス）を出すため
+        // 通信中の通知（常駐サービス）を出すため
         if (android.os.Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1);
@@ -237,7 +237,8 @@ public class MainActivity extends Activity implements PlcLink.Listener {
     }
 
     private void refreshButtons() {
-        boolean en = PlcLink.isRunning() && unlockSwitch.isChecked();
+        // 通信できているときだけ操作できる（古い値を見て操作しないように）
+        boolean en = PlcLink.isFresh(store.staleSec() * 1000L) && unlockSwitch.isChecked();
         for (Row r : rows) for (Button b : r.buttons) b.setEnabled(en);
     }
 
@@ -279,7 +280,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         if (requestCode != REQ_SETTINGS || resultCode != RESULT_OK) return;
         updateIpText();
         PlcLink.setHeartbeatDevice(store.heartbeat());
-        // 待受中にポートやPLC IPが変わったら、待受をやり直す
+        // 通信中に設定が変わったら、通信をやり直す
         if (PlcLink.isRunning()) {
             Link before = PlcLink.server();
             PlcLink.restartIfChanged(store.port(), store.plcIp());
@@ -294,7 +295,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         boolean fresh = false;
         Link server = PlcLink.server();
         if (server == null) {
-            setStatus(PlcLink.isStarting() ? "待受を開始しています…" : "停止中", COLOR_GRAY);
+            setStatus(PlcLink.isStarting() ? "通信を開始しています…" : "停止中", COLOR_GRAY);
         } else {
             long last = server.lastRequestMillis;
             long age = System.currentTimeMillis() - last;
@@ -349,9 +350,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         String plc = store.plcIp();
         String warn = (!plc.isEmpty() && !NetUtil.sameSubnet24(plc)) ? "\n※ スマホと別のネットワークのようです" : "";
         ipText.setText("PLC: " + (plc.isEmpty() ? "未設定（接続元を制限しない）" : plc)
-                + (store.clientMode()
-                ? "：" + store.plcPort() + "（" + (store.plcUdp() ? "UDP" : "TCP") + "）　スマホから読みに行く"
-                : "　待受ポート: " + store.port() + "（シンプルCPU通信）")
+                + "：" + store.plcPort() + "（" + (store.plcUdp() ? "UDP" : "TCP") + "）"
                 + "\nこのスマホのIP: " + NetUtil.phoneIps() + warn);
     }
 
@@ -361,7 +360,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         new AlertDialog.Builder(this)
                 .setTitle("操作確認")
                 .setMessage(label(it) + " を " + (on ? "ON" : "OFF") + " にします。\n"
-                        + "PLCが次の読出し周期で取得します。実機の安全を確認してください。")
+                        + "PLCへすぐ書込みます。実機の安全を確認してください。")
                 .setPositiveButton("実行", (d, w) -> {
                     it.writeBit(mem, on);
                     updateStatusAndValues();
@@ -387,7 +386,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
 
         final AlertDialog d = new AlertDialog.Builder(this)
                 .setTitle(label(it) + " の値を変更")
-                .setMessage("現在値: " + row.value.getText() + "（" + it.format.label + "）\nPLCが次の読出し周期で取得します。")
+                .setMessage("現在値: " + row.value.getText() + "（" + it.format.label + "）\nPLCへすぐ書込みます。")
                 .setView(box)
                 .setPositiveButton("変更", null)
                 .setNegativeButton("キャンセル", null)
@@ -447,7 +446,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         f.addView(dev);
 
         TextView note = new TextView(this);
-        note.setText("シンプルCPU通信設定の「交信先」側デバイスと同じ番号にします");
+        note.setText("PLCのデバイス番号をそのまま入れます（例: D0、M2000）");
         note.setTextSize(12);
         note.setTextColor(COLOR_GRAY);
         f.addView(note);
@@ -495,6 +494,10 @@ public class MainActivity extends Activity implements PlcLink.Listener {
                 dev.setError(e.getMessage());
                 return;
             }
+            if (n.writable && n.device().writeBlockedReason() != null) {
+                dev.setError(n.device().writeBlockedReason());
+                return;
+            }
             int i = existing == null ? -1 : items.indexOf(existing);
             if (i >= 0) items.set(i, n);
             else items.add(n);
@@ -512,7 +515,6 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         menu.add(0, MENU_LOG, 0, "通信ログ");
         menu.add(0, MENU_SETTINGS, 1, "設定");
         menu.add(0, MENU_HELP, 2, "使い方");
-        menu.add(0, MENU_SCAN, 3, "ポート探索");
         return true;
     }
 
@@ -527,67 +529,17 @@ public class MainActivity extends Activity implements PlcLink.Listener {
             openSettings();
             return true;
         }
-        if (id == MENU_SCAN) {
-            confirmScan();
-            return true;
-        }
         if (id == MENU_HELP) {
             new AlertDialog.Builder(this).setTitle("使い方")
                     .setMessage("1. スマホをPLCと同じネットワークのWi-Fiにつなぐ（IPは固定がおすすめ）\n"
-                            + "2. 「⚙ 設定」でPLCのIPと待受ポートを入れ、「待受開始」\n"
-                            + "3. GX Works3のシンプルCPU通信設定で、交信先を「SLMP対応機器」、IPをこのスマホ、ポートを待受ポートにする\n"
-                            + "4. PLC→スマホは「書込み」、スマホ→PLCは「読出し」の交信パターンで設定\n"
-                            + "5. このアプリで同じデバイス番号を登録する\n\n"
+                            + "2. GX Works3「Ethernetポート → 相手機器接続構成設定」にSLMP接続機器（UDP、ポート例 5010、バイナリ）を追加してPLCへ書込み・リセット\n"
+                            + "3. 「⚙ 設定」でPLCのIP・ポートを入れ、「通信開始」\n"
+                            + "4. 見たい・変えたいPLCのデバイス番号をこのアプリに登録する\n\n"
                             + "アプリは開いたままにしてください（画面は消えないようにしています）。")
                     .setPositiveButton("OK", null).show();
             return true;
         }
         return super.onOptionsItemSelected(item);
-    }
-
-    /** PLCがどのポートに送ってくるか調べる（交信相手の種別でポートが固定のとき用） */
-    private void confirmScan() {
-        new AlertDialog.Builder(this).setTitle("ポート探索")
-                .setMessage("1024〜9999番のUDPポートで30秒間待ち受け、PLCから届いたポート番号を調べます。\n"
-                        + "探索中は待受を止めます（返事はしません）。PLCの交信相手IPがこのスマホになっていることを確認してください。")
-                .setPositiveButton("開始", (d, w) -> runScan())
-                .setNegativeButton("キャンセル", null).show();
-    }
-
-    private void runScan() {
-        boolean wasRunning = PlcLink.isRunning();
-        if (wasRunning) PlcLink.stop();
-        TextView t = new TextView(this);
-        t.setTextSize(14);
-        t.setPadding(dp(20), dp(12), dp(20), dp(12));
-        t.setText("準備中…");
-        final AlertDialog dlg = new AlertDialog.Builder(this).setTitle("ポート探索").setView(t)
-                .setCancelable(false).setPositiveButton("閉じる", null).create();
-        dlg.show();
-        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
-        new Thread(() -> {
-            try {
-                Thread.sleep(800);   // 待受の停止を待つ
-            } catch (InterruptedException ignored) {
-            }
-            java.util.Map<Integer, String> found = PortScan.run(1024, 9999, 30,
-                    text -> runOnUiThread(() -> t.setText(text)));
-            StringBuilder sb = new StringBuilder();
-            if (found.isEmpty()) {
-                sb.append("届きませんでした。\nPLCの交信相手IP・PLCの電源とリセット・スマホのWi-Fiを確認してください。");
-            } else {
-                for (java.util.Map.Entry<Integer, String> e : found.entrySet()) {
-                    sb.append("ポート ").append(e.getKey()).append("  ← ").append(e.getValue()).append("\n\n");
-                }
-                sb.append("設定の「待受ポート番号」をこの番号にしてください。");
-            }
-            runOnUiThread(() -> {
-                t.setText(sb.toString());
-                t.setTextIsSelectable(true);
-                dlg.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
-                if (wasRunning) startServer();
-            });
-        }, "port-scan").start();
     }
 
     private void showLog() {
@@ -597,7 +549,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         t.setPadding(dp(16), dp(8), dp(16), dp(8));
         List<String> lines = PlcLink.server() != null ? PlcLink.server().logLines() : new ArrayList<>();
         Collections.reverse(lines);   // 新しい順
-        t.setText(lines.isEmpty() ? "ログはありません（待受中のみ記録）" : android.text.TextUtils.join("\n", lines));
+        t.setText(lines.isEmpty() ? "ログはありません（通信中のみ記録）" : android.text.TextUtils.join("\n", lines));
         ScrollView sv = new ScrollView(this);
         sv.addView(t);
         new AlertDialog.Builder(this).setTitle("通信ログ（新しい順）").setView(sv)
@@ -617,7 +569,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
         super.onDestroy();
         main.removeCallbacks(refresh);
         PlcLink.removeListener(this);
-        // アプリを閉じたら（戻るボタンで終了）待受も止める
+        // アプリを閉じたら（戻るボタンで終了）通信も止める
         if (isFinishing()) PlcLink.stop();
     }
 

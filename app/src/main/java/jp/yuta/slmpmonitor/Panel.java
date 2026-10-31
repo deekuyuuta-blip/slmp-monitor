@@ -285,13 +285,16 @@ public final class Panel {
                             String e = checkInput(setValue);
                             if (e != null) return "書込値: " + e;
                         }
+                        if (d.writeBlockedReason() != null) return d.writeBlockedReason();
                         if (!lampDevice.isEmpty()) Device.parse(lampDevice);
                         break;
                     }
                     case NUMBER:
                     case INPUT: {
                         if (device.isEmpty()) return "デバイスを入力してください";
-                        if (Device.parse(device).bit) return "ワードデバイス（D、Wなど）を指定してください";
+                        Device nd = Device.parse(device);
+                        if (nd.bit) return "ワードデバイス（D、Wなど）を指定してください";
+                        if (type == Type.INPUT && nd.writeBlockedReason() != null) return nd.writeBlockedReason();
                         if (!min.isEmpty() && parseNumber(min) == null) return "下限が数値ではありません";
                         if (!max.isEmpty() && parseNumber(max) == null) return "上限が数値ではありません";
                         break;

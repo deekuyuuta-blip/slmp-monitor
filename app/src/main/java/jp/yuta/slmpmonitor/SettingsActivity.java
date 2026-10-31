@@ -13,15 +13,15 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-/** 設定画面：PLCのIP、待受ポート、ハートビート、通信なし判定、自動開始 */
+/** 設定画面：PLCのIP・ポート、読出し周期、ハートビート、通信なし判定、自動開始 */
 public class SettingsActivity extends Activity {
 
     private static final int COLOR_NOTE = 0xFF757575;
     private static final int COLOR_WARN = 0xFFE65100;
 
     private ItemStore store;
-    private EditText plcIp, port, heartbeat, staleSec, plcPort, pollMs;
-    private android.widget.RadioButton modeClient, modeServer, protoUdp, protoTcp;
+    private EditText plcIp, heartbeat, staleSec, plcPort, pollMs;
+    private android.widget.RadioButton protoUdp, protoTcp;
     private CheckBox autoStart, openPanel;
     private TextView subnetWarn;
 
@@ -39,7 +39,7 @@ public class SettingsActivity extends Activity {
         section(f, "PLC");
         plcIp = field(f, "PLCのIPアドレス", "例: 192.168.3.39",
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI,
-                "PLC（内蔵Ethernet）のIPアドレス。読みに行く方式ではこのIPへ接続します。待ち受ける方式では、このIPからの接続だけ受け付けます。");
+                "PLC（内蔵Ethernet）のIPアドレス。スマホからこのIPへ読み書きしに行きます。");
         plcIp.setText(store.plcIp());
         subnetWarn = new TextView(this);
         subnetWarn.setTextSize(12);
@@ -49,20 +49,7 @@ public class SettingsActivity extends Activity {
             if (!has) checkSubnet();
         });
 
-        section(f, "通信方式");
-        android.widget.RadioGroup mg = new android.widget.RadioGroup(this);
-        modeClient = new android.widget.RadioButton(this);
-        modeClient.setId(android.view.View.generateViewId());
-        modeClient.setText("スマホからPLCへ読み書きしに行く（おすすめ）");
-        modeServer = new android.widget.RadioButton(this);
-        modeServer.setId(android.view.View.generateViewId());
-        modeServer.setText("PLCのシンプルCPU通信を待ち受ける");
-        mg.addView(modeClient);
-        mg.addView(modeServer);
-        f.addView(mg);
-        (store.clientMode() ? modeClient : modeServer).setChecked(true);
-
-        section(f, "スマホから読みに行く方式");
+        section(f, "PLCとの通信（SLMP）");
         plcPort = field(f, "PLCのSLMPポート番号", "例: 5010", InputType.TYPE_CLASS_NUMBER,
                 "GX Works3「Ethernetポート → 基本設定 → 相手機器接続構成設定」で追加したSLMP接続機器のポート番号（交信データコードはバイナリ）。");
         plcPort.setText(String.valueOf(store.plcPort()));
@@ -82,21 +69,16 @@ public class SettingsActivity extends Activity {
                 "この間隔で、一覧と操作画面のデバイスをPLCから読みます（50〜5000）。応答がなければ0.3秒で送り直します。");
         pollMs.setText(String.valueOf(store.pollMs()));
 
-        section(f, "シンプルCPU通信を待ち受ける方式");
         TextView phone = new TextView(this);
-        phone.setText("このスマホのIP: " + NetUtil.phoneIps()
-                + "\nPLCのシンプルCPU通信設定で、交信先IPにこのアドレスを入れてください。");
+        phone.setText("このスマホのIP: " + NetUtil.phoneIps());
         phone.setTextSize(13);
         phone.setPadding(0, dp(4), 0, dp(4));
         f.addView(phone);
-        port = field(f, "待受ポート番号", "例: 5000", InputType.TYPE_CLASS_NUMBER,
-                "シンプルCPU通信設定の交信先ポート番号と同じにします（1024〜65535）。");
-        port.setText(String.valueOf(store.port()));
 
         section(f, "安全・監視");
         heartbeat = field(f, "ハートビート デバイス", "例: D199（空欄でなし）",
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS,
-                "1秒ごとに+1します（ビットなら反転）。読みに行く方式ではPLCのこのデバイスへ直接書込みます。値が変わらなくなったら、スマホ停止とみなしてください。");
+                "1秒ごとにPLCのこのデバイスへ+1を書込みます（ビットなら反転）。ラダーで値が変わらなくなったら、スマホ停止とみなしてください（例: D2019）。");
         heartbeat.setText(store.heartbeat());
         staleSec = field(f, "通信なし判定（秒）", "例: 3", InputType.TYPE_CLASS_NUMBER,
                 "この秒数PLCとやり取りできなければ「通信なし」と表示し、受信値を灰色にします。");
@@ -104,34 +86,13 @@ public class SettingsActivity extends Activity {
 
         section(f, "起動");
         autoStart = new CheckBox(this);
-        autoStart.setText("アプリ起動時に自動で待受を開始");
+        autoStart.setText("アプリ起動時に自動で通信を開始");
         autoStart.setChecked(store.autoStart());
         f.addView(autoStart);
         openPanel = new CheckBox(this);
         openPanel.setText("アプリ起動時に操作画面を開く");
         openPanel.setChecked(store.openPanelOnStart());
         f.addView(openPanel);
-
-        section(f, "スマホ → PLC の値");
-        TextView keep = new TextView(this);
-        keep.setTextSize(12);
-        keep.setTextColor(COLOR_NOTE);
-        keep.setText("画面から書いた値（ボタン・数値入力）は保存され、アプリを再起動しても元の値に戻ります。"
-                + "PLCが読出しで0に上書きされるのを防ぐためです（モーメンタリボタンはOFFに戻ります）。\n保存中: "
-                + PlcLink.mem.localCount() + "点");
-        f.addView(keep);
-        Button clearLocal = new Button(this);
-        clearLocal.setText("保存した値を消す（0／OFFに戻す）");
-        clearLocal.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
-                .setTitle("保存した値を消す")
-                .setMessage("スマホ→PLCの値をすべて0／OFFにします。\n待受中なら、次の読出しでPLC側も0／OFFになります。")
-                .setPositiveButton("消す", (d, w) -> {
-                    PlcLink.mem.clearLocal();
-                    keep.setText("保存中: 0点");
-                    Toast.makeText(this, "消しました", Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton("キャンセル", null).show());
-        f.addView(clearLocal);
 
         LinearLayout btns = new LinearLayout(this);
         btns.setGravity(Gravity.END);
@@ -166,15 +127,6 @@ public class SettingsActivity extends Activity {
         if (!ip.isEmpty() && !NetUtil.isIpv4(ip)) {
             plcIp.setError("IPアドレスの形式が正しくありません（例: 192.168.3.39）");
             plcIp.requestFocus();
-            return;
-        }
-        int p;
-        try {
-            p = Integer.parseInt(port.getText().toString().trim());
-            if (p < 1024 || p > 65535) throw new NumberFormatException();
-        } catch (NumberFormatException e) {
-            port.setError("1024〜65535で入力してください");
-            port.requestFocus();
             return;
         }
         String hb = heartbeat.getText().toString().trim();
@@ -214,17 +166,15 @@ public class SettingsActivity extends Activity {
             pollMs.requestFocus();
             return;
         }
-        if (modeClient.isChecked() && !NetUtil.isIpv4(ip)) {
-            plcIp.setError("スマホから読みに行く方式では、PLCのIPアドレスが必要です");
+        if (!NetUtil.isIpv4(ip)) {
+            plcIp.setError("PLCのIPアドレスを入れてください（例: 192.168.1.1）");
             plcIp.requestFocus();
             return;
         }
-        store.saveClientMode(modeClient.isChecked());
         store.savePlcPort(pp);
         store.savePlcUdp(protoUdp.isChecked());
         store.savePollMs(pm);
         store.savePlcIp(ip);
-        store.savePort(p);
         store.saveHeartbeat(hb);
         store.saveStaleSec(st);
         store.saveAutoStart(autoStart.isChecked());

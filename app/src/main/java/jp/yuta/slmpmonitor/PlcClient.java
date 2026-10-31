@@ -26,7 +26,7 @@ import java.util.concurrent.LinkedBlockingDeque;
  * スマホからPLCへSLMP（バイナリ）で読み書きしに行く。
  * - 一覧・操作画面で使っているデバイスを周期的に一括読出しして、スマホ内メモリへ入れる
  * - 画面から書いた値は、すぐPLCへ書込む（読出しより優先）
- * - 応答が来なければ短い時間で送り直す（シンプルCPU通信のように長く止まらない）
+ * - 応答が来なければ短い時間で送り直す（長く止まらない）
  * 4Eフレーム（通し番号つき）で始め、PLCが答えなければ3Eフレームに切り替える。
  */
 public final class PlcClient extends Link {
@@ -66,6 +66,7 @@ public final class PlcClient extends Link {
         final boolean[] bits;
         final long at = System.currentTimeMillis();
         boolean quiet;   // ハートビートなど、ログに出さない
+        boolean mustDeliver;   // モーメンタリのOFF：時間が経っても取り消さず、必ず届ける
 
         Write(int code, int no, short[] words, boolean[] bits) {
             this.code = code;
@@ -110,11 +111,23 @@ public final class PlcClient extends Link {
         thread.start();
     }
 
+    /** 停止中でも、残ったモーメンタリOFFだけは送る */
+    private volatile boolean flushing;
+
     @Override
     public void stop() {
         running = false;
+        synchronized (signal) {
+            signal.notifyAll();
+        }
+        // 周期処理が終わるのを待つ（終わり際に、押しっぱなしのボタンのOFFを送る）
+        if (thread != null) {
+            try {
+                thread.join(3000);
+            } catch (InterruptedException ignored) {
+            }
+        }
         closeSockets();
-        if (thread != null) thread.interrupt();
         addLog("停止");
     }
 
@@ -131,8 +144,21 @@ public final class PlcClient extends Link {
 
     private final Object signal = new Object();
 
+    /** 書込み禁止のデバイスならログに残して true */
+    private boolean blocked(int code, int no) {
+        String why;
+        try {
+            why = Device.parse(Device.name(code, no)).writeBlockedReason();
+        } catch (RuntimeException e) {
+            why = "不明なデバイス";
+        }
+        if (why == null) return false;
+        addLog("書込を拒否 " + Device.name(code, no) + "：" + why);
+        return true;
+    }
+
     public void queueWords(int code, int no, short[] v) {
-        if (!running) return;
+        if (!running || blocked(code, no)) return;
         writes.add(new Write(code, no, v, null));
         synchronized (signal) {
             signal.notifyAll();
@@ -152,9 +178,15 @@ public final class PlcClient extends Link {
         }
     }
 
-    public void queueBits(int code, int no, boolean[] v) {
-        if (!running) return;
-        writes.add(new Write(code, no, null, v));
+    public void queueBits(int code, int no, boolean[] v, boolean momentary) {
+        boolean anyOn = false;
+        for (boolean b : v) anyOn |= b;
+        boolean release = momentary && !anyOn;
+        // 停止処理中でも、モーメンタリのOFFだけは受け付ける
+        if ((!running && !(release && thread != null && thread.isAlive())) || blocked(code, no)) return;
+        Write w = new Write(code, no, null, v);
+        w.mustDeliver = release;
+        writes.add(w);
         synchronized (signal) {
             signal.notifyAll();
         }
@@ -170,7 +202,7 @@ public final class PlcClient extends Link {
                 // 書込みを先に（押したボタンがすぐ効くように）
                 Write w;
                 while (running && (w = writes.poll()) != null) {
-                    if (System.currentTimeMillis() - w.at > WRITE_MAX_AGE_MS) {
+                    if (!w.mustDeliver && System.currentTimeMillis() - w.at > WRITE_MAX_AGE_MS) {
                         if (!w.quiet) addLog("書込を取り消し " + Device.name(w.code, w.no) + "（通信できず時間が経ったため）");
                         continue;
                     }
@@ -229,6 +261,19 @@ public final class PlcClient extends Link {
                 }
             }
         }
+        // 停止時：押しっぱなしのモーメンタリをOFFにしてから終わる
+        flushing = true;
+        long until = System.currentTimeMillis() + 2500;
+        Write w;
+        while ((w = writes.poll()) != null && System.currentTimeMillis() < until) {
+            if (!w.mustDeliver) continue;
+            try {
+                doWrite(w);
+            } catch (IOException e) {
+                addLog("停止時に " + Device.name(w.code, w.no) + " をOFFにできませんでした：" + e.getMessage());
+            }
+        }
+        flushing = false;
     }
 
     private void markOk() {
@@ -368,7 +413,7 @@ public final class PlcClient extends Link {
      */
     private short[] request(byte[] cmd) throws IOException {
         IOException last = null;
-        for (int attempt = 0; attempt <= RETRIES && running; attempt++) {
+        for (int attempt = 0; attempt <= RETRIES && (running || flushing); attempt++) {
             int ser = (serial = (serial + 1) & 0xFFFF);
             byte[] frame = frame(cmd, ser);
             try {

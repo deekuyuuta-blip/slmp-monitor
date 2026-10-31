@@ -25,7 +25,8 @@ public final class DeviceMemory {
     public interface WriteHook {
         void words(int code, int no, short[] values);
 
-        void bits(int code, int no, boolean[] values);
+        /** momentary: 押している間だけONのボタン（OFFは必ず届ける） */
+        void bits(int code, int no, boolean[] values, boolean momentary);
     }
 
     private volatile WriteHook writeHook;
@@ -39,9 +40,9 @@ public final class DeviceMemory {
         if (h != null) h.words(code, no, v.clone());
     }
 
-    private void hookBits(int code, int no, boolean[] v) {
+    private void hookBits(int code, int no, boolean[] v, boolean momentary) {
         WriteHook h = writeHook;
-        if (h != null) h.bits(code, no, v.clone());
+        if (h != null) h.bits(code, no, v.clone(), momentary);
     }
 
     public void setOnLocalChange(Runnable r) {
@@ -129,7 +130,7 @@ public final class DeviceMemory {
             writeBits(code, no, values);
             for (int i = 0; i < values.length; i++) localBitKeys.add(key(code, no + i));
         }
-        hookBits(code, no, values);
+        hookBits(code, no, values, false);
         localChanged();
     }
 
@@ -140,7 +141,7 @@ public final class DeviceMemory {
             writeBits(code, no, values);
             for (int i = 0; i < values.length; i++) if (localBitKeys.contains(key(code, no + i))) saved = true;
         }
-        hookBits(code, no, values);
+        hookBits(code, no, values, true);
         if (saved) localChanged();
     }
 

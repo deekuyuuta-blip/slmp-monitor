@@ -13,7 +13,7 @@ import android.os.IBinder;
 import android.os.PowerManager;
 
 /**
- * 待受中だけ動く常駐サービス（通知を出す）。
+ * 通信中だけ動く常駐サービス（通知を出す）。
  * これがないと、画面を消したり他のアプリに切り替えたときにAndroidがアプリを止め、
  * PLCへの返事が途切れる。CPUも眠らないようにする。
  */
@@ -70,7 +70,7 @@ public final class PlcService extends Service {
         Notification.Builder b;
         if (Build.VERSION.SDK_INT >= 26) {
             if (nm != null && nm.getNotificationChannel(CHANNEL) == null) {
-                NotificationChannel ch = new NotificationChannel(CHANNEL, "PLC待受", NotificationManager.IMPORTANCE_LOW);
+                NotificationChannel ch = new NotificationChannel(CHANNEL, "PLC通信", NotificationManager.IMPORTANCE_LOW);
                 ch.setShowBadge(false);
                 nm.createNotificationChannel(ch);
             }
@@ -81,8 +81,8 @@ public final class PlcService extends Service {
         Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE);
         return b.setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle("SLMPモニタ 待受中")
-                .setContentText("PLCからの通信を待っています（ポート " + PlcLink.serverPort() + "）")
+                .setContentTitle("SLMPモニタ 通信中")
+                .setContentText("PLC " + PlcLink.serverPlcIp() + " と通信しています")
                 .setContentIntent(pi)
                 .setOngoing(true)
                 .build();

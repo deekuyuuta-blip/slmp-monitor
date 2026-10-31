@@ -32,7 +32,7 @@ final class ItemStore {
     String heartbeat() { return prefs.getString("heartbeat", ""); }
     void saveHeartbeat(String dev) { prefs.edit().putString("heartbeat", dev).apply(); }
 
-    /** true: スマホからPLCへ読み書きしに行く（SLMPクライアント）／false: PLCからのシンプルCPU通信を待ち受け */
+    /** （旧）通信方式。今は常にスマホから読み書きしに行く */
     boolean clientMode() { return prefs.getInt("clientMode", 0) == 1; }
     void saveClientMode(boolean on) { prefs.edit().putInt("clientMode", on ? 1 : 0).apply(); }
 

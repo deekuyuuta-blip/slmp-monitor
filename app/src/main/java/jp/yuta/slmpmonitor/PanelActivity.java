@@ -232,9 +232,9 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
             message("一定時間操作がなかったのでロックしました");
         }
         if (PlcLink.isStarting()) {
-            setStatus("待受を開始しています…", C_GRAY);
+            setStatus("通信を開始しています…", C_GRAY);
         } else if (!PlcLink.isRunning()) {
-            setStatus("● 待受停止中（タップで開始）", C_ERR);
+            setStatus("● 通信停止中（タップで開始）", C_ERR);
         } else if (PlcLink.server().lastRequestMillis == 0) {
             setStatus("● " + PlcLink.server().waitingText() + (PlcLink.isClient() ? "" : "  ポート " + PlcLink.serverPort()), C_GRAY);
         } else if (!fresh) {
@@ -259,7 +259,7 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
 
     @Override
     public String canOperate() {
-        if (!PlcLink.isRunning()) return "待受が停止しています";
+        if (!PlcLink.isRunning()) return "通信が停止しています";
         if (!fresh()) return "PLCと通信していないため操作できません";
         if (!unlocked) {
             flashLock();

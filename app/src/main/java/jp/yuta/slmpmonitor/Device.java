@@ -58,6 +58,21 @@ public final class Device {
         return String.format(Locale.ROOT, "code%02X:%d", code, number);
     }
 
+    /** スマホから書込んでよいデバイスか（X入力・Y出力・特殊リレー/レジスタは不可）。不可なら理由 */
+    public String writeBlockedReason() {
+        switch (prefix) {
+            case "X":
+                return "X（入力）には書込めません";
+            case "Y":
+                return "Y（出力）への直接書込みは安全のため禁止しています。M等を書き、ラダーでYを出してください";
+            case "SM":
+            case "SD":
+                return "特殊リレー・特殊レジスタ（SM・SD）への書込みは禁止しています";
+            default:
+                return null;
+        }
+    }
+
     public static Device parse(String text) {
         String t = text.trim().toUpperCase(Locale.ROOT);
         for (Object[] row : TABLE) {

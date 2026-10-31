@@ -10,9 +10,7 @@ import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * PLCとの通信のしかた（共通部分）。
- * SlmpServer: スマホが待ち受け、PLCがシンプルCPU通信で来る。
- * PlcClient : スマホからPLCへSLMPで読み書きしに行く。
+ * PLCとの通信（状態とログ）。実体は PlcClient（スマホからPLCへSLMPで読み書きしに行く）。
  */
 public abstract class Link {
 
