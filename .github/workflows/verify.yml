@@ -1,0 +1,52 @@
+name: Protocol verify
+
+# verify- で始まるブランチ：アプリの通信部分をPCで動かし、第三者のSLMPライブラリから試す
+on:
+  push:
+    branches: ['verify-*']
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install libraries
+        run: |
+          pip install pymcprotocol pyslmpclient 2>&1 | tail -3 | tee pip.log || true
+      - name: Build server
+        run: |
+          S=app/src/main/java/jp/yuta/slmpmonitor
+          mkdir out
+          javac -encoding UTF-8 -d out $S/Device.java $S/DeviceMemory.java $S/SlmpServer.java $S/MonitorItem.java ci/verify/RunServer.java
+      - name: Run
+        run: |
+          mkdir -p res
+          java -cp out RunServer 5000 60000 res/server.txt > res/server_out.txt 2>&1 &
+          sleep 3
+          python ci/verify/third_party.py 5000 2>&1 | tee res/third_party.log || true
+          cp third_party.json res/ || true
+          for f in ci/verify/extra_*.py; do [ -f "$f" ] && (python "$f" 5000 2>&1 | tee "res/$(basename $f .py).log") || true; done
+          sleep 1
+          pkill -f RunServer || true
+          sleep 2
+          cp pip.log res/ || true
+          ls res
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete ci-verify --yes --cleanup-tag || true
+          gh release create ci-verify res/* --prerelease --latest=false --target "$GITHUB_SHA" \
+            --title "Verify ${GITHUB_SHA::7}" --notes "第三者ライブラリでの検証結果（自動）"
