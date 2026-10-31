@@ -22,6 +22,8 @@ public class SettingsActivity extends Activity {
     private ItemStore store;
     private EditText plcIp, heartbeat, staleSec, plcPort, pollMs;
     private android.widget.RadioButton protoUdp, protoTcp;
+    private CheckBox usePw, savePw;
+    private EditText pwField;
     private CheckBox autoStart, openPanel;
     private TextView subnetWarn;
 
@@ -74,6 +76,34 @@ public class SettingsActivity extends Activity {
         phone.setTextSize(13);
         phone.setPadding(0, dp(4), 0, dp(4));
         f.addView(phone);
+
+        section(f, "リモートパスワード");
+        usePw = new CheckBox(this);
+        usePw.setText("リモートパスワードを使う");
+        usePw.setChecked(store.usePassword());
+        f.addView(usePw);
+        TextView pwNote = new TextView(this);
+        pwNote.setTextSize(12);
+        pwNote.setTextColor(COLOR_NOTE);
+        pwNote.setText("GX Works3の「リモートパスワード」で、SLMP接続機器の接続に設定したパスワードです。"
+                + "通信開始のたびに入力します。間違えた場合は、PLCがロックアウトしないよう、それ以上は送りません。");
+        f.addView(pwNote);
+        savePw = new CheckBox(this);
+        savePw.setText("このスマホに保存する（毎回の入力を省く。スマホを持った人は誰でも操作できます）");
+        savePw.setChecked(!store.savedPassword().isEmpty());
+        f.addView(savePw);
+        pwField = new EditText(this);
+        pwField.setSingleLine(true);
+        pwField.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        pwField.setHint(store.savedPassword().isEmpty() ? "保存するパスワード" : "保存済み（変えるときだけ入力）");
+        f.addView(pwField);
+        Runnable vis = () -> {
+            savePw.setEnabled(usePw.isChecked());
+            pwField.setVisibility(usePw.isChecked() && savePw.isChecked() ? android.view.View.VISIBLE : android.view.View.GONE);
+        };
+        usePw.setOnCheckedChangeListener((b, c) -> vis.run());
+        savePw.setOnCheckedChangeListener((b, c) -> vis.run());
+        vis.run();
 
         section(f, "安全・監視");
         heartbeat = field(f, "ハートビート デバイス", "例: D199（空欄でなし）",
@@ -171,6 +201,25 @@ public class SettingsActivity extends Activity {
             plcIp.requestFocus();
             return;
         }
+        String newPw = pwField.getText().toString();
+        if (usePw.isChecked() && savePw.isChecked()) {
+            if (newPw.isEmpty() && store.savedPassword().isEmpty()) {
+                pwField.setError("保存するパスワードを入力してください");
+                pwField.requestFocus();
+                return;
+            }
+            if (!newPw.isEmpty() && (newPw.length() < 4 || newPw.length() > 32 || !newPw.matches("[\\x21-\\x7E]+"))) {
+                pwField.setError("半角英数字・記号で入力してください");
+                pwField.requestFocus();
+                return;
+            }
+            if (!newPw.isEmpty()) store.saveSavedPassword(newPw);
+        } else {
+            store.saveSavedPassword("");
+        }
+        boolean pwChanged = store.usePassword() != usePw.isChecked() || !newPw.isEmpty();
+        store.saveUsePassword(usePw.isChecked());
+        if (pwChanged) PlcLink.setSessionPassword(null);
         store.savePlcPort(pp);
         store.savePlcUdp(protoUdp.isChecked());
         store.savePollMs(pm);

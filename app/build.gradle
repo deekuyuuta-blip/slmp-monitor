@@ -10,8 +10,8 @@ android {
         applicationId 'jp.yuta.slmpmonitor'
         minSdk 24
         targetSdk 34
-        versionCode 13
-        versionName '2.1'
+        versionCode 14
+        versionName '2.2'
     }
 
     // 更新インストールできるよう、毎回同じ鍵で署名する（個人利用のアプリ用）

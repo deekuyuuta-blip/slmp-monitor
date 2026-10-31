@@ -246,7 +246,7 @@ public class MainActivity extends Activity implements PlcLink.Listener {
 
     private void startServer() {
         startBtn.setEnabled(false);
-        PlcLink.start(store.port(), store.plcIp());
+        PlcLink.startWithPassword(this, store.port(), store.plcIp());
     }
 
     private void stopServer() {

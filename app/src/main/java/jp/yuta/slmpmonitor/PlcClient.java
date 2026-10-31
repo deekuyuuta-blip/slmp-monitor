@@ -90,7 +90,14 @@ public final class PlcClient extends Link {
     private List<Range> ranges = new ArrayList<>();
     private long rangesAt;
 
-    public PlcClient(Context c, DeviceMemory mem, String ip, int port, boolean udp, int pollMs) {
+    /** リモートパスワード（空なら使わない） */
+    private final String password;
+    private boolean unlocked;
+    /** パスワードが違った。PLCがロックアウトしないよう、それ以上は送らない */
+    public volatile boolean authFailed;
+
+    public PlcClient(Context c, DeviceMemory mem, String ip, int port, boolean udp, int pollMs, String password) {
+        this.password = password == null ? "" : password;
         this.mem = mem;
         this.prefs = c.getApplicationContext().getSharedPreferences("slmp", Context.MODE_PRIVATE);
         this.ip = ip == null ? "" : ip.trim();
@@ -139,7 +146,36 @@ public final class PlcClient extends Link {
 
     @Override
     public String waitingText() {
-        return "PLCへ接続中";
+        return authFailed ? "リモートパスワードが違います（通信停止→開始で再入力）" : "PLCへ接続中";
+    }
+
+    /** 接続のはじめにリモートパスワードを解除する（使う設定のときだけ） */
+    private void ensureUnlocked() throws IOException {
+        if (password.isEmpty() || unlocked) return;
+        byte[] pw = password.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        try {
+            request(command(0x1630, 0x0000, le16(pw.length), pw));
+        } catch (PlcError e) {
+            authFailed = true;
+            PlcLink.forgetPassword();
+            addLog("リモートパスワードの解除に失敗しました（" + String.format(Locale.ROOT, "%04X", e.end)
+                    + "）。PLCのロックアウトを避けるため、通信を止めます");
+            throw e;
+        }
+        unlocked = true;
+        addLog("リモートパスワードを解除しました");
+    }
+
+    private void lockQuiet() {
+        if (password.isEmpty() || !unlocked) return;
+        try {
+            request(command(0x1631, 0x0000, le16(password.length()),
+                    password.getBytes(java.nio.charset.StandardCharsets.US_ASCII)));
+            addLog("リモートパスワードでロックしました");
+        } catch (IOException e) {
+            addLog("終了時のロックに失敗: " + e.getMessage());
+        }
+        unlocked = false;
     }
 
     private final Object signal = new Object();
@@ -199,6 +235,17 @@ public final class PlcClient extends Link {
         while (running) {
             long t0 = System.currentTimeMillis();
             try {
+                if (authFailed) {
+                    // パスワード違い：何も送らずに待つ（停止→開始で再入力）
+                    synchronized (signal) {
+                        try {
+                            signal.wait(1000);
+                        } catch (InterruptedException ignored) {
+                        }
+                    }
+                    continue;
+                }
+                ensureUnlocked();
                 // 書込みを先に（押したボタンがすぐ効くように）
                 Write w;
                 while (running && (w = writes.poll()) != null) {
@@ -229,6 +276,14 @@ public final class PlcClient extends Link {
                 markOk();
                 failStreak = 0;
             } catch (PlcError e) {
+                if (authFailed) continue;
+                if (passwordError(e.end)) {
+                    // ロックされた（PLCの再起動など）→ 次の周期で解除し直す
+                    unlocked = false;
+                    addLog(e.getMessage() + (password.isEmpty() ? "　※設定で「リモートパスワードを使う」にしてください" : ""));
+                    sleepQuiet(password.isEmpty() ? 3000 : 300);
+                    continue;
+                }
                 // PLCが異常応答を返した＝通信自体はできている
                 markOk();
                 addLog(e.getMessage());
@@ -273,6 +328,7 @@ public final class PlcClient extends Link {
                 addLog("停止時に " + Device.name(w.code, w.no) + " をOFFにできませんでした：" + e.getMessage());
             }
         }
+        lockQuiet();
         flushing = false;
     }
 
@@ -402,9 +458,17 @@ public final class PlcClient extends Link {
 
     /** PLCが異常の終了コードを返した */
     private static final class PlcError extends IOException {
-        PlcError(String m) {
+        final int end;
+
+        PlcError(String m, int end) {
             super(m);
+            this.end = end;
         }
+    }
+
+    /** リモートパスワード関係の異常終了コード（C200番台） */
+    private static boolean passwordError(int end) {
+        return end >= 0xC200 && end <= 0xC2FF;
     }
 
     /**
@@ -423,8 +487,10 @@ public final class PlcClient extends Link {
                 if (end != 0) {
                     int c = (cmd[2] & 0xFF) | ((cmd[3] & 0xFF) << 8);
                     int no = (cmd[6] & 0xFF) | ((cmd[7] & 0xFF) << 8) | ((cmd[8] & 0xFF) << 16);
-                    throw new PlcError(String.format(Locale.ROOT, "PLCが異常応答 %04X（%s %s）%s", end,
-                            c == 0x1401 ? "書込" : "読出", Device.name(cmd[9] & 0xFF, no), hint(end)));
+                    String what = c == 0x1630 ? "リモートパスワード解除"
+                            : c == 0x1631 ? "リモートパスワードのロック"
+                            : (c == 0x1401 ? "書込 " : "読出 ") + Device.name(cmd[9] & 0xFF, no);
+                    throw new PlcError(String.format(Locale.ROOT, "PLCが異常応答 %04X（%s）%s", end, what, hint(end)), end);
                 }
                 int n = (resp.length - hl - 2) / 2;
                 short[] v = new short[n];
@@ -446,6 +512,7 @@ public final class PlcClient extends Link {
     }
 
     private static String hint(int end) {
+        if (passwordError(end)) return "：リモートパスワード（設定・入力した文字・ロック状態）を確認";
         switch (end) {
             case 0xC059:
                 return "：PLCがこのコマンドに対応していない";
@@ -566,6 +633,7 @@ public final class PlcClient extends Link {
     }
 
     private void closeSockets() {
+        unlocked = false;   // UDPは送信元ポートが変わるので解除し直す
         if (ds != null) ds.close();
         ds = null;
         try {

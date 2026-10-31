@@ -47,6 +47,14 @@ final class ItemStore {
     int pollMs() { return prefs.getInt("pollMs", 200); }
     void savePollMs(int ms) { prefs.edit().putInt("pollMs", ms).apply(); }
 
+    /** リモートパスワードを使う */
+    boolean usePassword() { return prefs.getInt("usePw", 0) == 1; }
+    void saveUsePassword(boolean on) { prefs.edit().putInt("usePw", on ? 1 : 0).apply(); }
+
+    /** 保存したリモートパスワード（空なら毎回入力） */
+    String savedPassword() { return prefs.getString("pw", ""); }
+    void saveSavedPassword(String pw) { prefs.edit().putString("pw", pw).apply(); }
+
     boolean openPanelOnStart() { return prefs.getInt("openPanel", 0) == 1; }
     void saveOpenPanelOnStart(boolean on) { prefs.edit().putInt("openPanel", on ? 1 : 0).apply(); }
 

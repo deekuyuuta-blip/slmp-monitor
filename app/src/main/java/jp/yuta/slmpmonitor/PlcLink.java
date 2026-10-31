@@ -191,6 +191,65 @@ public final class PlcLink {
         });
     }
 
+    /** 今回入力したリモートパスワード（保存しない設定のとき。アプリを閉じると消える） */
+    private static volatile String sessionPassword;
+
+    /** 使うパスワード。使わない設定なら ""、入力が必要なら null */
+    public static String password() {
+        if (prefs == null || prefs.getInt("usePw", 0) != 1) return "";
+        String saved = prefs.getString("pw", "");
+        if (!saved.isEmpty()) return saved;
+        return sessionPassword;
+    }
+
+    public static void setSessionPassword(String pw) {
+        sessionPassword = pw;
+    }
+
+    /** パスワード違いのとき：次の開始で入力し直してもらう */
+    static void forgetPassword() {
+        sessionPassword = null;
+        if (prefs != null && !prefs.getString("pw", "").isEmpty()) prefs.edit().putString("pw", "").apply();
+    }
+
+    /**
+     * 通信開始。リモートパスワードの入力が必要なら先に聞く。
+     */
+    public static void startWithPassword(android.app.Activity a, int port, String plcIp) {
+        if (password() != null) {
+            start(port, plcIp);
+            return;
+        }
+        final android.widget.EditText e = new android.widget.EditText(a);
+        e.setSingleLine(true);
+        e.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        e.setHint("6〜32文字");
+        android.widget.LinearLayout box = new android.widget.LinearLayout(a);
+        int pad = (int) (20 * a.getResources().getDisplayMetrics().density);
+        box.setPadding(pad, pad / 2, pad, 0);
+        box.addView(e, new android.widget.LinearLayout.LayoutParams(-1, -2));
+        final android.app.AlertDialog d = new android.app.AlertDialog.Builder(a)
+                .setTitle("リモートパスワード")
+                .setMessage("PLCに設定したリモートパスワードを入力してください。\n（このスマホには保存しません）")
+                .setView(box)
+                .setPositiveButton("通信開始", null)
+                .setNegativeButton("キャンセル", null)
+                .create();
+        d.setOnShowListener(x -> d.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String pw = e.getText().toString();
+            if (pw.length() < 4 || pw.length() > 32 || !pw.matches("[\\x21-\\x7E]+")) {
+                e.setError("半角英数字・記号で入力してください");
+                return;
+            }
+            setSessionPassword(pw);
+            d.dismiss();
+            start(port, plcIp);
+        }));
+        d.setOnCancelListener(x -> notifyListeners(null));
+        d.setOnDismissListener(x -> notifyListeners(null));
+        d.show();
+    }
+
     /** 停止処理中の通信（押しっぱなしのボタンのOFFを届けるため） */
     private static volatile PlcClient stopping;
 
@@ -244,10 +303,15 @@ public final class PlcLink {
 
     public static void start(final int port, final String plcIp) {
         if (server != null || starting) return;
+        if (password() == null) {
+            // パスワード未入力（Wi-Fi切替や設定変更でのやり直し時など）：開始ボタンで入力してもらう
+            notifyListeners("リモートパスワードを入力するため、通信開始を押してください");
+            return;
+        }
         starting = true;
         final String sig = configSig(port, plcIp);
         final Link s = new PlcClient(app, mem, plcIp, prefs.getInt("plcPort", 5010),
-                prefs.getInt("plcUdp", 1) == 1, prefs.getInt("pollMs", 200));
+                prefs.getInt("plcUdp", 1) == 1, prefs.getInt("pollMs", 200), password());
         bindToWifi(true);   // ソケットを作る前に（作ったソケットがWi-Fiに固定される）
         watchWifi(true);
         final String note = bindNote;
@@ -296,7 +360,8 @@ public final class PlcLink {
 
     /** 通信方式・ポート・IPなどをまとめた文字列（変わったらやり直す） */
     private static String configSig(int port, String plcIp) {
-        String m = prefs == null ? "" : prefs.getInt("plcPort", 5010) + "/"
+        String m = prefs == null ? "" : prefs.getInt("usePw", 0) + "/" + prefs.getString("pw", "").hashCode() + "/"
+                + prefs.getInt("plcPort", 5010) + "/"
                 + prefs.getInt("plcUdp", 1) + "/" + prefs.getInt("pollMs", 200);
         return port + "/" + plcIp + "/" + m;
     }

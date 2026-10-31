@@ -85,7 +85,7 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
         status.setTypeface(Typeface.DEFAULT_BOLD);
         status.setPadding(dp(10), 0, dp(4), 0);
         status.setOnClickListener(v -> {
-            if (!PlcLink.isRunning() && !PlcLink.isStarting()) PlcLink.start(store.port(), store.plcIp());
+            if (!PlcLink.isRunning() && !PlcLink.isStarting()) PlcLink.startWithPassword(this, store.port(), store.plcIp());
         });
         runBar.addView(status, new LinearLayout.LayoutParams(0, -2, 1f));
         lockBtn = new Button(this);
