@@ -321,6 +321,8 @@ def main():
                       {"name": "設定値", "device": "D2000", "format": "S16", "writable": True}]
     store.save()
     root = tk.Tk()
+    if len(sys.argv) > 2:   # 表示倍率の試験（例: 2.0 = 150%）
+        root.tk.call("tk", "scaling", float(sys.argv[2]))
     app = A.App(root, store)
     root.after(90000, lambda: (print("TIMEOUT"), os._exit(2)))
     run_steps(app, root)

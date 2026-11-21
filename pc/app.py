@@ -17,13 +17,54 @@ from slmpcore import (Device, MonitorItem, DeviceMemory, PlcClient, FORMATS, FOR
 import panel as pn
 
 APP_NAME = "SLMPモニタ"
-VERSION = "1.0"
+VERSION = "1.1"
 AUTO_LOCK_SEC = 120
 FONT = "Meiryo UI" if sys.platform == "win32" else "TkDefaultFont"
 
 C_ON = "#2E7D32"
 C_ERR = "#C62828"
 C_GRAY = "#607D8B"
+
+
+# 画面の表示倍率（Windowsの「拡大縮小」125%・150%など）。Tkを作ったあとに決める
+UI_SCALE = 1.0
+
+
+def S(px):
+    """100%のときのピクセル数を、今の表示倍率に合わせる"""
+    return int(round(px * UI_SCALE))
+
+
+def init_scale(root):
+    global UI_SCALE
+    try:
+        UI_SCALE = max(1.0, root.winfo_fpixels("1i") / 96.0)
+    except tk.TclError:
+        UI_SCALE = 1.0
+
+
+def place_window(win, store, key, w, h, minw, minh):
+    """前回の位置と大きさを戻す（画面からはみ出す・小さすぎるときは既定の大きさ）"""
+    win.minsize(S(minw), S(minh))
+    g = store["win_" + key]
+    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+    if g:
+        try:
+            ww, hh, x, y = g
+            if S(minw) <= ww <= sw and S(minh) <= hh <= sh and -50 <= x < sw - 100 and 0 <= y < sh - 100:
+                win.geometry("%dx%d+%d+%d" % (ww, hh, x, y))
+                return
+        except (TypeError, ValueError):
+            pass
+    win.geometry("%dx%d" % (min(S(w), sw - 40), min(S(h), sh - 80)))
+
+
+def remember_window(win, store, key):
+    try:
+        if win.state() == "normal":
+            store["win_" + key] = [win.winfo_width(), win.winfo_height(), win.winfo_x(), win.winfo_y()]
+    except tk.TclError:
+        pass
 
 
 def argb(c):
@@ -426,7 +467,7 @@ class LogWindow(tk.Toplevel):
         super().__init__(app.root)
         self.app = app
         self.title("通信ログ（新しい順）")
-        self.geometry("640x480")
+        place_window(self, app.store, "log", 640, 480, 360, 240)
         self.text = tk.Text(self, font=("Consolas", 10), wrap="none", state="disabled")
         sb = ttk.Scrollbar(self, command=self.text.yview)
         self.text.configure(yscrollcommand=sb.set)
@@ -438,7 +479,13 @@ class LogWindow(tk.Toplevel):
         sb.pack(side="right", fill="y")
         self.text.pack(fill="both", expand=True)
         self.last = None
+        self.protocol("WM_DELETE_WINDOW", self.close)
         self.refresh()
+
+    def close(self):
+        remember_window(self, self.app.store, "log")
+        self.app.store.save()
+        self.destroy()
 
     def lines(self):
         c = self.app.link.client
@@ -469,7 +516,7 @@ class PanelCanvas(tk.Canvas):
     BG_OUT = "#101316"
     BG_PANEL = "#1E2329"
     SEL = "#00E5FF"
-    HANDLE = 14
+    HANDLE = 14  # 100%のとき（使うときは S() で倍率をかける）
 
     def __init__(self, master, win):
         super().__init__(master, bg=self.BG_OUT, highlightthickness=0)
@@ -579,14 +626,14 @@ class PanelCanvas(tk.Canvas):
                 self.create_rectangle(x1, y1, x2, y2, outline="#5A6068")
                 info = p.device_summary()
                 if info:
-                    f = self.font(11, False, True)
+                    f = self.font(S(11), False, True)
                     tw = f.measure(info)
-                    self.create_rectangle(x1, y2 - 15, x1 + tw + 6, y2, fill="#000000", width=0)
-                    self.create_text(x1 + 3, y2 - 7, text=info, fill="#FFEB3B", font=f, anchor="w")
+                    self.create_rectangle(x1, y2 - S(15), x1 + tw + S(6), y2, fill="#000000", width=0)
+                    self.create_text(x1 + S(3), y2 - S(7), text=info, fill="#FFEB3B", font=f, anchor="w")
             if self.selected in scr.parts:
                 x1, y1, x2, y2 = self.rect(self.selected)
                 self.create_rectangle(x1, y1, x2, y2, outline=self.SEL, width=2)
-                hs = self.HANDLE
+                hs = S(self.HANDLE)
                 self.create_rectangle(x2 - hs, y2 - hs, x2, y2, fill=self.SEL, width=0)
 
     def draw_part(self, p, mem, fresh):
@@ -658,7 +705,7 @@ class PanelCanvas(tk.Canvas):
             self._drag = None
             if self.selected is not None:
                 x1, y1, x2, y2 = self.rect(self.selected)
-                hs = self.HANDLE * 1.4
+                hs = S(self.HANDLE) * 1.4
                 if x2 - hs <= e.x <= x2 + 4 and y2 - hs <= e.y <= y2 + 4:
                     self._drag = ("resize", e.x, e.y, self.selected.x, self.selected.y, self.selected.w, self.selected.h)
                     return
@@ -919,7 +966,10 @@ class PanelWindow(tk.Toplevel):
         self.screen_index = 0
         self.changed = False
         p = app.panel
-        self.geometry("%dx%d" % ((760, 520) if p.landscape else (440, 760)))
+        if p.landscape:
+            place_window(self, app.store, "panel_l", 760, 520, 480, 320)
+        else:
+            place_window(self, app.store, "panel_p", 440, 760, 300, 420)
         self.configure(bg="#14181C")
 
         top = tk.Frame(self, bg="#14181C")
@@ -1214,9 +1264,10 @@ class PanelWindow(tk.Toplevel):
         self.canvas.redraw()
 
     def toggle_orientation(self):
+        remember_window(self, self.app.store, "panel_l" if self.app.panel.landscape else "panel_p")
         self.app.panel.set_landscape(not self.app.panel.landscape)
         self.changed = True
-        self.geometry("%dx%d" % ((760, 520) if self.app.panel.landscape else (440, 760)))
+        self.fit_orientation()
         self.canvas.redraw()
 
     # ---- 書き出し・読み込み
@@ -1274,12 +1325,21 @@ class PanelWindow(tk.Toplevel):
         self.app.panel = p
         self.save()
         self.screen_index = 0
-        self.geometry("%dx%d" % ((760, 520) if p.landscape else (440, 760)))
+        self.fit_orientation()
         self.rebuild_tabs()
         self.canvas.selected = None
         self.canvas.redraw()
 
+    def fit_orientation(self):
+        """縦横に合った大きさにする（前回その向きで使った大きさがあればそれ）"""
+        if self.app.panel.landscape:
+            place_window(self, self.app.store, "panel_l", 760, 520, 480, 320)
+        else:
+            place_window(self, self.app.store, "panel_p", 440, 760, 300, 420)
+
     def close(self):
+        remember_window(self, self.app.store, "panel_l" if self.app.panel.landscape else "panel_p")
+        self.app.store.save()
         self.canvas.release_momentary()
         if self.changed:
             self.save()
@@ -1369,7 +1429,8 @@ class App:
         self.log_win = None
 
         root.title("%s %s（PC版）" % (APP_NAME, VERSION))
-        root.geometry("760x560")
+        init_scale(root)
+        place_window(root, self.store, "main", 800, 600, 620, 420)
         style = ttk.Style(root)
         try:
             style.theme_use("vista" if sys.platform == "win32" else "clam")
@@ -1380,7 +1441,9 @@ class App:
                 tkfont.nametofont(name).configure(family=FONT, size=10)
             except tk.TclError:
                 pass
-        style.configure("Treeview", rowheight=28, font=(FONT, 11))
+        # 行の高さは文字の高さから決める（表示倍率が大きいと文字が重なるため）
+        style.configure("Treeview", rowheight=int(tkfont.Font(family=FONT, size=11).metrics("linespace") * 1.45),
+                        font=(FONT, 11))
         style.configure("Treeview.Heading", font=(FONT, 10, "bold"))
 
         top = ttk.Frame(root, padding=(10, 8, 10, 0))
@@ -1412,7 +1475,7 @@ class App:
         for c, t, w, a in (("name", "名前", 220, "w"), ("dev", "デバイス", 90, "w"), ("fmt", "形式", 120, "w"),
                            ("val", "値", 140, "e"), ("dir", "区分", 120, "w")):
             self.tree.heading(c, text=t)
-            self.tree.column(c, width=w, anchor=a)
+            self.tree.column(c, width=S(w), minwidth=S(50), anchor=a)
         sb = ttk.Scrollbar(mid, command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
@@ -1423,7 +1486,7 @@ class App:
         self.tree.bind("<<TreeviewSelect>>", lambda e: self.update_buttons())
 
         bot = ttk.Frame(root, padding=10)
-        bot.pack(fill="x")
+        bot.pack(fill="x", side="bottom", before=mid)   # 窓が小さくてもボタンが隠れないように
         for t, c in (("＋追加", self.add_item), ("編集", self.edit_item), ("削除", self.delete_item),
                      ("↑", lambda: self.move_item(-1)), ("↓", lambda: self.move_item(1))):
             ttk.Button(bot, text=t, command=c, width=6 if len(t) <= 2 else 8).pack(side="left", padx=2)
@@ -1648,6 +1711,10 @@ class App:
             "・非常停止など安全に関わる操作には使わないでください"), parent=self.root)
 
     def quit(self):
+        remember_window(self.root, self.store, "main")
+        if self.log_win and self.log_win.winfo_exists():
+            remember_window(self.log_win, self.store, "log")
+        self.store.save()
         if self.panel_win:
             self.panel_win.close()
         self.link.stop()

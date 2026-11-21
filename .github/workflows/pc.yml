@@ -31,6 +31,16 @@ jobs:
           PYTHONIOENCODING: utf-8
         run: python pc/selftest.py selftest_out
 
+      # 表示倍率150%相当でも画面が崩れないか（スクリーンショットのみ確認用）
+      - name: Self test (150%)
+        continue-on-error: true
+        env:
+          PYTHONIOENCODING: utf-8
+        shell: bash
+        run: |
+          python pc/selftest.py selftest_150 2.0 || true
+          for f in selftest_150/*.png; do cp "$f" "selftest_out/150_$(basename "$f")"; done
+
       - name: Build exe
         run: |
           python -m PyInstaller --noconfirm --onefile --windowed --name SLMPMonitor --paths pc pc/app.py
