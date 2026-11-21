@@ -138,7 +138,11 @@ def run_steps(app, root):
         p = find_part(label)
         x1, y1, x2, y2 = c.rect(p)
         x, y = int((x1 + x2) / 2), int((y1 + y2) / 2)
+        hp = c.hit(c.vx(x), c.vy(y))
         c.event_generate("<ButtonPress-1>", x=x, y=y)
+        plc_log.append("state: hit=%s pressed=%s momentary=%s" % (
+            hp.label if hp else None, c.pressed.label if c.pressed else None,
+            c.momentary_on.label if c.momentary_on else None))
         if hold:
             t0 = time.time()
             while time.time() - t0 < hold:
