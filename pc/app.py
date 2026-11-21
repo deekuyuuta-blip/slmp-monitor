@@ -17,7 +17,7 @@ from slmpcore import (Device, MonitorItem, DeviceMemory, PlcClient, FORMATS, FOR
 import panel as pn
 
 APP_NAME = "SLMPモニタ"
-VERSION = "1.1"
+VERSION = "1.2"
 AUTO_LOCK_SEC = 120
 FONT = "Meiryo UI" if sys.platform == "win32" else "TkDefaultFont"
 
@@ -1131,11 +1131,35 @@ class PanelWindow(tk.Toplevel):
     def rebuild_tabs(self):
         for w in self.tabs.winfo_children():
             w.destroy()
+        self._tab_buttons = []
         for i, s in enumerate(self.app.panel.screens):
             sel = i == self.screen_index
-            tk.Button(self.tabs, text=s.name, command=lambda i=i: self.switch_screen(i), relief="flat",
-                      bg="#37474F" if sel else "#14181C", fg="white" if sel else "#90A4AE",
-                      font=(FONT, 10, "bold" if sel else "normal"), padx=10).pack(side="left", padx=1, pady=2)
+            b = tk.Button(self.tabs, text=s.name, command=lambda i=i: self.switch_screen(i), relief="flat",
+                          bg="#37474F" if sel else "#14181C", fg="white" if sel else "#90A4AE",
+                          font=(FONT, 10, "bold" if sel else "normal"), padx=8, pady=1)
+            self._tab_buttons.append(b)
+        self.layout_tabs()
+        if not getattr(self, "_tabs_bound", False):
+            self.tabs.bind("<Configure>", lambda e: self.layout_tabs())
+            self._tabs_bound = True
+
+    def layout_tabs(self):
+        """タブを窓の幅で折り返して並べる（画面が多くても全部見えるように）"""
+        btns = getattr(self, "_tab_buttons", [])
+        width = max(self.tabs.winfo_width(), self.winfo_width(), 200)
+        x = y = 0
+        row_h = 0
+        for b in btns:
+            bw, bh = b.winfo_reqwidth(), b.winfo_reqheight()
+            if x > 0 and x + bw > width:
+                x = 0
+                y += row_h + 1
+            b.place(x=x, y=y)
+            x += bw + 1
+            row_h = max(row_h, bh)
+        h = y + row_h + 2 if btns else 1
+        if int(self.tabs.cget("height") or 0) != h:
+            self.tabs.configure(height=h)
 
     # ---- メニュー
     def show_menu(self):

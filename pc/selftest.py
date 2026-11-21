@@ -261,6 +261,26 @@ def run_steps(app, root):
         app.panel_win.toggle_orientation()
     step(landscape, 800)
 
+    # 8b. 画面が多いときのタブの折り返し
+    def many_tabs():
+        w = app.panel_win
+        keep = app.panel
+        p = pn.Panel.from_json(keep.to_json())
+        for i in range(15):
+            p.screens.append(pn.Screen("B%d ストッパ・起立" % (i + 1)))
+        app.panel = p
+        w.rebuild_tabs()
+        w.update()
+        grab(w, "09_many_tabs.png")
+        last = w._tab_buttons[-1]
+        check("タブが全部見える", last.winfo_y() + last.winfo_height() <= w.tabs.winfo_height() + 1
+              and last.winfo_x() + last.winfo_width() <= w.tabs.winfo_width() + 1,
+              "tabs h=%d last=(%d,%d)" % (w.tabs.winfo_height(), last.winfo_x(), last.winfo_y()))
+        app.panel = keep
+        w.screen_index = 0
+        w.rebuild_tabs()
+    step(many_tabs, 800)
+
     # 9. 押したまま通信停止 → OFFが届いてからロック
     def stop_while_pressed():
         c = app.panel_win.canvas
