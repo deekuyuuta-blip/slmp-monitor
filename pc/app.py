@@ -626,10 +626,11 @@ class PanelCanvas(tk.Canvas):
                 self.create_rectangle(x1, y1, x2, y2, outline="#5A6068")
                 info = p.device_summary()
                 if info:
-                    f = self.font(S(11), False, True)
+                    f = self.font(max(8, min(S(11), 11 * self.scale)), False, True)
                     tw = f.measure(info)
-                    self.create_rectangle(x1, y2 - S(15), x1 + tw + S(6), y2, fill="#000000", width=0)
-                    self.create_text(x1 + S(3), y2 - S(7), text=info, fill="#FFEB3B", font=f, anchor="w")
+                    th = f.metrics("linespace")
+                    self.create_rectangle(x1, y2 - th - 2, x1 + tw + 6, y2, fill="#000000", width=0)
+                    self.create_text(x1 + 3, y2 - th / 2 - 1, text=info, fill="#FFEB3B", font=f, anchor="w")
             if self.selected in scr.parts:
                 x1, y1, x2, y2 = self.rect(self.selected)
                 self.create_rectangle(x1, y1, x2, y2, outline=self.SEL, width=2)
