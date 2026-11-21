@@ -641,9 +641,9 @@ class PanelCanvas(tk.Canvas):
         """運転中、ランプ・ボタンの左上にデバイス番号を小さく出す。文字に使える高さを返す"""
         if self.edit or not p.device or p.type not in ("LAMP", "BUTTON") or not self.win.app.store["showDev"]:
             return 0
-        size = max(7, min(10 * self.scale, (y2 - y1) * 0.2))
+        size = max(S(9), min(11 * self.scale, (y2 - y1) * 0.22))
         f = self.font(size, False, True)
-        tc = "#37474F" if contrast(col) == "#000000" else "#B0BEC5"
+        tc = "#263238" if contrast(col) == "#000000" else "#CFD8DC"
         pad = max(2, 3 * self.scale)
         self.create_text(x1 + pad, y1 + pad * 0.6, text=p.device, fill=tc, font=f, anchor="nw")
         return f.metrics("linespace") * 0.8

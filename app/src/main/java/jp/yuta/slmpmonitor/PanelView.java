@@ -112,11 +112,11 @@ public class PanelView extends View {
     /** 運転中、ランプ・ボタンの左上にデバイス番号を小さく出す。文字に使える上端を返す */
     private float drawDeviceTag(Canvas c, Panel.Part p, RectF box, int bg) {
         if (editMode || !showDevice || p.device.isEmpty()) return box.top;
-        float size = Math.max(dp(7), Math.min(10 * scale, box.height() * 0.2f));
+        float size = Math.max(dp(9), Math.min(11 * scale, box.height() * 0.22f));
         text.setTypeface(Typeface.MONOSPACE);
         text.setTextSize(size);
         text.setTextAlign(Paint.Align.LEFT);
-        text.setColor(contrast(bg) == 0xFF000000 ? 0xFF37474F : 0xFFB0BEC5);
+        text.setColor(contrast(bg) == 0xFF000000 ? 0xFF263238 : 0xFFCFD8DC);
         Paint.FontMetrics fm = text.getFontMetrics();
         float pad = Math.max(dp(2), 3 * scale);
         c.drawText(p.device, box.left + pad, box.top + pad * 0.6f - fm.ascent, text);
