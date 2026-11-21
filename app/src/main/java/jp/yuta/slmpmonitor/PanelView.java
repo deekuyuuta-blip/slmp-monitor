@@ -111,6 +111,10 @@ public class PanelView extends View {
 
     /** 運転中、ランプ・ボタンの左上にデバイス番号を小さく出す。文字に使える上端を返す */
     private float drawDeviceTag(Canvas c, Panel.Part p, RectF box, int bg) {
+        return drawDeviceTag(c, p, box, bg, false);
+    }
+
+    private float drawDeviceTag(Canvas c, Panel.Part p, RectF box, int bg, boolean right) {
         if (editMode || !showDevice || p.device.isEmpty()) return box.top;
         float size = Math.max(dp(9), Math.min(11 * scale, box.height() * 0.22f));
         text.setTypeface(Typeface.MONOSPACE);
@@ -119,7 +123,13 @@ public class PanelView extends View {
         text.setColor(contrast(bg) == 0xFF000000 ? 0xFF263238 : 0xFFCFD8DC);
         Paint.FontMetrics fm = text.getFontMetrics();
         float pad = Math.max(dp(2), 3 * scale);
-        c.drawText(p.device, box.left + pad, box.top + pad * 0.6f - fm.ascent, text);
+        if (right) {
+            text.setTextAlign(Paint.Align.RIGHT);
+            c.drawText(p.device, box.right - pad, box.top + pad * 0.6f - fm.ascent, text);
+            text.setTextAlign(Paint.Align.CENTER);
+        } else {
+            c.drawText(p.device, box.left + pad, box.top + pad * 0.6f - fm.ascent, text);
+        }
         return box.top + (fm.descent - fm.ascent) * 0.8f;
     }
 
@@ -277,6 +287,8 @@ public class PanelView extends View {
                     drawFitTextAligned(c, p.label + (input ? "  ✎" : ""), la, 0xFFB0BEC5, false, 0.9f, Paint.Align.LEFT);
                     valueArea.top = la.bottom;
                 }
+                if (showLabel) drawDeviceTag(c, p, r, 0xFF0C0F12, true);
+                else valueArea.top = drawDeviceTag(c, p, r, 0xFF0C0F12);
                 String v = p.displayValue(mem);
                 String unit = p.unit.isEmpty() ? "" : " " + p.unit;
                 int vc = stale ? 0xFF78909C : (input ? 0xFFFFFFFF : 0xFF69F0AE);

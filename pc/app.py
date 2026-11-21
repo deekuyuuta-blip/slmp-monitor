@@ -17,7 +17,7 @@ from slmpcore import (Device, MonitorItem, DeviceMemory, PlcClient, FORMATS, FOR
 import panel as pn
 
 APP_NAME = "SLMPモニタ"
-VERSION = "1.4"
+VERSION = "1.5"
 AUTO_LOCK_SEC = 120
 FONT = "Meiryo UI" if sys.platform == "win32" else "TkDefaultFont"
 
@@ -637,15 +637,18 @@ class PanelCanvas(tk.Canvas):
                 hs = S(self.HANDLE)
                 self.create_rectangle(x2 - hs, y2 - hs, x2, y2, fill=self.SEL, width=0)
 
-    def dev_tag(self, p, x1, y1, x2, y2, col):
-        """運転中、ランプ・ボタンの左上にデバイス番号を小さく出す。文字に使える高さを返す"""
-        if self.edit or not p.device or p.type not in ("LAMP", "BUTTON") or not self.win.app.store["showDev"]:
+    def dev_tag(self, p, x1, y1, x2, y2, col, right=False):
+        """運転中、部品の左上（right=Trueなら右上）にデバイス番号を小さく出す。文字に使える高さを返す"""
+        if self.edit or not p.device or p.type not in ("LAMP", "BUTTON", "NUMBER", "INPUT") or not self.win.app.store["showDev"]:
             return 0
         size = max(S(9), min(11 * self.scale, (y2 - y1) * 0.22))
         f = self.font(size, False, True)
         tc = "#263238" if contrast(col) == "#000000" else "#CFD8DC"
         pad = max(2, 3 * self.scale)
-        self.create_text(x1 + pad, y1 + pad * 0.6, text=p.device, fill=tc, font=f, anchor="nw")
+        if right:
+            self.create_text(x2 - pad, y1 + pad * 0.6, text=p.device, fill=tc, font=f, anchor="ne")
+        else:
+            self.create_text(x1 + pad, y1 + pad * 0.6, text=p.device, fill=tc, font=f, anchor="nw")
         return f.metrics("linespace") * 0.8
 
     def draw_part(self, p, mem, fresh):
@@ -696,6 +699,10 @@ class PanelCanvas(tk.Canvas):
                 la = (x1 + pad, y1 + pad * 0.5, x2 - pad, y1 + (y2 - y1) * 0.36)
                 self.fit_text(p.label + ("  ✎" if inp else ""), la, "#B0BEC5", False, 0.9, "w")
                 va = (x1 + pad, la[3], x2 - pad, y2)
+            if show_label:
+                self.dev_tag(p, x1, y1, x2, y2, 0xFF0C0F12, right=True)
+            else:
+                va = (va[0], y1 + self.dev_tag(p, x1, y1, x2, y2, 0xFF0C0F12), va[2], va[3])
             v = p.display_value(mem) + ((" " + p.unit) if p.unit else "")
             vc = "#78909C" if stale else ("#FFFFFF" if inp else "#69F0AE")
             self.fit_text(v, va, vc, True, 0.8 if show_label else 0.6, "e")
