@@ -1,0 +1,53 @@
+name: Build PC (Windows)
+
+# PC版（pc/）を Windows で自動試験し、exe を作って「pc-latest」リリースに置く
+on:
+  push:
+    branches: [main]
+    paths: ['pc/**', 'samples/**', '.github/workflows/pc.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tools
+        run: python -m pip install pyinstaller pillow
+
+      # 模擬PLCを相手に実際の画面を動かす（結果とスクリーンショットは selftest_out へ）
+      - name: Self test
+        id: selftest
+        continue-on-error: true
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python pc/selftest.py selftest_out
+
+      - name: Build exe
+        run: |
+          python -m PyInstaller --noconfirm --onefile --windowed --name SLMPMonitor --paths pc pc/app.py
+          Copy-Item dist/SLMPMonitor.exe SLMPMonitor.exe
+          Compress-Archive -Path selftest_out/* -DestinationPath selftest.zip -Force
+
+      - name: Publish to pc-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release delete pc-latest --yes --cleanup-tag || true
+          gh release create pc-latest SLMPMonitor.exe selftest.zip selftest_out/*.png selftest_out/result.txt \
+            --prerelease=false --latest=false \
+            --title "SLMPモニタ PC版 最新" \
+            --notes "コミット ${GITHUB_SHA::7} からの自動ビルド（Windows）。自動試験: ${{ steps.selftest.outcome }}"
+
+      - name: Fail if self test failed
+        if: steps.selftest.outcome != 'success'
+        run: exit 1

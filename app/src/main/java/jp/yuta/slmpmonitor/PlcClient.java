@@ -319,6 +319,12 @@ public final class PlcClient extends Link {
         // 停止時：押しっぱなしのモーメンタリをOFFにしてから終わる
         flushing = true;
         long until = System.currentTimeMillis() + 2500;
+        if (!writes.isEmpty() && !authFailed) {
+            try {
+                ensureUnlocked();   // 通信エラーでロックに戻っていたら解除し直してから送る
+            } catch (IOException ignored) {
+            }
+        }
         Write w;
         while ((w = writes.poll()) != null && System.currentTimeMillis() < until) {
             if (!w.mustDeliver) continue;
