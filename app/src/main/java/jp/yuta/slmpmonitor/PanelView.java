@@ -44,6 +44,7 @@ public class PanelView extends View {
     private int screenIndex;
     private boolean editMode;
     private boolean fresh = true;
+    private boolean showDevice = true;
     private Host host;
     private final DeviceMemory mem = PlcLink.mem;
 
@@ -101,6 +102,25 @@ public class PanelView extends View {
         selected = null;
         if (host != null) host.selectionChanged(null);
         invalidate();
+    }
+
+    public void setShowDevice(boolean b) {
+        showDevice = b;
+        invalidate();
+    }
+
+    /** 運転中、ランプ・ボタンの左上にデバイス番号を小さく出す。文字に使える上端を返す */
+    private float drawDeviceTag(Canvas c, Panel.Part p, RectF box, int bg) {
+        if (editMode || !showDevice || p.device.isEmpty()) return box.top;
+        float size = Math.max(dp(7), Math.min(10 * scale, box.height() * 0.2f));
+        text.setTypeface(Typeface.MONOSPACE);
+        text.setTextSize(size);
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setColor(contrast(bg) == 0xFF000000 ? 0xFF37474F : 0xFFB0BEC5);
+        Paint.FontMetrics fm = text.getFontMetrics();
+        float pad = Math.max(dp(2), 3 * scale);
+        c.drawText(p.device, box.left + pad, box.top + pad * 0.6f - fm.ascent, text);
+        return box.top + (fm.descent - fm.ascent) * 0.8f;
     }
 
     public void setFresh(boolean f) {
@@ -200,7 +220,9 @@ public class PanelView extends View {
                     c.drawRoundRect(in, rad, rad, stroke);
                 }
                 String t = on ? (p.onText.isEmpty() ? p.label : p.onText) : (p.offText.isEmpty() ? p.label : p.offText);
-                drawFitText(c, t, r, contrast(on ? p.onColor : p.offColor), true, 0.42f);
+                RectF lb = new RectF(r);
+                lb.top = drawDeviceTag(c, p, r, on ? p.onColor : p.offColor);
+                drawFitText(c, t, lb, contrast(on ? p.onColor : p.offColor), true, 0.42f);
                 if (stale) dim(c, rad);
                 break;
             }
@@ -231,7 +253,9 @@ public class PanelView extends View {
                 } else {
                     t = "▶ " + t;
                 }
-                drawFitText(c, t, b, contrast(down ? darker(base) : base), true, 0.38f);
+                RectF lb = new RectF(b);
+                if (p.type == Panel.Type.BUTTON) lb.top = drawDeviceTag(c, p, b, down ? darker(base) : base);
+                drawFitText(c, t, lb, contrast(down ? darker(base) : base), true, 0.38f);
                 break;
             }
             case NUMBER:

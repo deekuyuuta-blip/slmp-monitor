@@ -37,7 +37,7 @@ import java.util.List;
 public class PanelActivity extends Activity implements PanelView.Host, PlcLink.Listener {
 
     private static final long AUTO_LOCK_MS = 120_000;
-    private static final int M_EDIT = 1, M_SCREENS = 2, M_ORIENT = 3, M_EXPORT = 4, M_IMPORT = 5, M_LIST = 6;
+    private static final int M_EDIT = 1, M_SCREENS = 2, M_ORIENT = 3, M_EXPORT = 4, M_IMPORT = 5, M_LIST = 6, M_DEV = 7;
     private static final int C_OK = 0xFF2E7D32, C_ERR = 0xFFC62828, C_GRAY = 0xFF90A4AE;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -122,6 +122,7 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
 
         view = new PanelView(this);
         view.setHost(this);
+        view.setShowDevice(prefs.getBoolean("showDevice", true));
         root.addView(view, new LinearLayout.LayoutParams(-1, 0, 1f));
         setContentView(root);
 
@@ -1075,8 +1076,9 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
     // ------------------------------------------------------------ メニュー
 
     private void showMenu() {
-        final int[] ids = {M_EDIT, M_SCREENS, M_ORIENT, M_EXPORT, M_IMPORT, M_LIST};
+        final int[] ids = {M_EDIT, M_SCREENS, M_ORIENT, M_DEV, M_EXPORT, M_IMPORT, M_LIST};
         String[] names = {editMode ? "編集を終了" : "画面を編集", "画面の管理", panel.landscape ? "縦向きにする" : "横向きにする",
+                prefs.getBoolean("showDevice", true) ? "デバイス番号を隠す" : "デバイス番号を表示",
                 "書き出し（バックアップ）", "読み込み", "一覧画面に戻る"};
         new AlertDialog.Builder(this).setTitle("メニュー")
                 .setItems(names, (d, which) -> menuAction(ids[which])).show();
@@ -1101,6 +1103,12 @@ public class PanelActivity extends Activity implements PanelView.Host, PlcLink.L
                         })
                         .setNegativeButton("キャンセル", null).show();
                 break;
+            case M_DEV: {
+                boolean b = !prefs.getBoolean("showDevice", true);
+                prefs.edit().putBoolean("showDevice", b).apply();
+                view.setShowDevice(b);
+                break;
+            }
             case M_EXPORT:
                 exportPanel();
                 break;

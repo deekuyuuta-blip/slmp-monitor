@@ -17,7 +17,7 @@ from slmpcore import (Device, MonitorItem, DeviceMemory, PlcClient, FORMATS, FOR
 import panel as pn
 
 APP_NAME = "SLMPモニタ"
-VERSION = "1.3"
+VERSION = "1.4"
 AUTO_LOCK_SEC = 120
 FONT = "Meiryo UI" if sys.platform == "win32" else "TkDefaultFont"
 
@@ -93,7 +93,7 @@ def config_dir():
 class Store:
     DEFAULTS = {"plcIp": "192.168.1.1", "plcPort": 5010, "plcUdp": True, "pollMs": 200,
                 "heartbeat": "D2019", "staleSec": 3, "autoStart": False, "openPanelOnStart": False,
-                "usePw": False, "pw": "", "items": None, "panel": None, "lastDir": ""}
+                "usePw": False, "pw": "", "showDev": True, "items": None, "panel": None, "lastDir": ""}
 
     def __init__(self, path=None):
         self.path = path or os.path.join(config_dir(), "config.json")
@@ -637,6 +637,17 @@ class PanelCanvas(tk.Canvas):
                 hs = S(self.HANDLE)
                 self.create_rectangle(x2 - hs, y2 - hs, x2, y2, fill=self.SEL, width=0)
 
+    def dev_tag(self, p, x1, y1, x2, y2, col):
+        """運転中、ランプ・ボタンの左上にデバイス番号を小さく出す。文字に使える高さを返す"""
+        if self.edit or not p.device or p.type not in ("LAMP", "BUTTON") or not self.win.app.store["showDev"]:
+            return 0
+        size = max(7, min(10 * self.scale, (y2 - y1) * 0.2))
+        f = self.font(size, False, True)
+        tc = "#37474F" if contrast(col) == "#000000" else "#B0BEC5"
+        pad = max(2, 3 * self.scale)
+        self.create_text(x1 + pad, y1 + pad * 0.6, text=p.device, fill=tc, font=f, anchor="nw")
+        return f.metrics("linespace") * 0.8
+
     def draw_part(self, p, mem, fresh):
         x1, y1, x2, y2 = self.rect(p)
         s = self.scale
@@ -651,7 +662,7 @@ class PanelCanvas(tk.Canvas):
                 self.round_rect(x1 + 3 * s, y1 + 3 * s, x2 - 3 * s, y2 - 3 * s, rad, fill="",
                                 outline="#9FBF9F" if col == pn.COLORS[0] else "#DDDDDD", width=max(2, 2 * s))
             txt = (p.onText or p.label) if on else (p.offText or p.label)
-            self.fit_text(txt, (x1, y1, x2, y2), contrast(col), True, 0.42)
+            self.fit_text(txt, (x1, y1 + self.dev_tag(p, x1, y1, x2, y2, col), x2, y2), contrast(col), True, 0.42)
             if stale:
                 self.round_rect(x1, y1, x2, y2, rad, fill="#202428", outline="", stipple="gray50")
         elif t in ("BUTTON", "SWITCH"):
@@ -671,7 +682,8 @@ class PanelCanvas(tk.Canvas):
                     txt = p.offText
             else:
                 txt = "▶ " + txt
-            self.fit_text(txt, (x1, y1 + off, x2, y2 + off), contrast(col), True, 0.38)
+            top = self.dev_tag(p, x1, y1 + off, x2, y2 + off, col)
+            self.fit_text(txt, (x1, y1 + off + top, x2, y2 + off), contrast(col), True, 0.38)
         elif t in ("NUMBER", "INPUT"):
             inp = t == "INPUT"
             down = inp and p is self.pressed and self.pressed_inside
@@ -1169,8 +1181,14 @@ class PanelWindow(tk.Toplevel):
         m.add_command(label="JSONをクリップボードにコピー", command=self.copy_json)
         m.add_command(label="クリップボードのJSONを読み込む", command=self.paste_json)
         m.add_separator()
+        m.add_command(label=("✓ " if self.app.store["showDev"] else "　") + "デバイス番号を表示", command=self.toggle_dev)
         m.add_command(label="通信ログ", command=self.app.show_log)
         m.tk_popup(self.btn_menu.winfo_rootx(), self.btn_menu.winfo_rooty() + self.btn_menu.winfo_height())
+
+    def toggle_dev(self):
+        self.app.store["showDev"] = not self.app.store["showDev"]
+        self.app.store.save()
+        self.canvas.redraw()
 
     def set_edit(self, e):
         self.canvas.release_momentary()
