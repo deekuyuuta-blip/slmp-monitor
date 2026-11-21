@@ -718,7 +718,12 @@ class PanelCanvas(tk.Canvas):
         self.redraw()
 
     def on_double(self, e):
-        if self.edit and self.selected is not None and self.selected.contains(self.vx(e.x), self.vy(e.y)):
+        # Tkはすばやい2回目の押下を「ダブルクリック」として渡す。運転中は普通の押下として扱う
+        # （でないと、すばやく2回押したボタンの2回目が効かない）
+        if not self.edit:
+            self.on_press(e)
+            return
+        if self.selected is not None and self.selected.contains(self.vx(e.x), self.vy(e.y)):
             self._drag = None
             self.win.edit_part(self.selected)
 
