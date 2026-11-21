@@ -528,8 +528,10 @@ class PanelCanvas(tk.Canvas):
     # ---- 描画
     def round_rect(self, x1, y1, x2, y2, r, **kw):
         r = max(0, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
-        pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
-               x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
+        # 直線部分の点を2つずつ置くと、smooth でも辺がまっすぐになる（はみ出しが出ない）
+        pts = [x1 + r, y1, x1 + r, y1, x2 - r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y1 + r,
+               x2, y2 - r, x2, y2 - r, x2, y2, x2 - r, y2, x2 - r, y2, x1 + r, y2, x1 + r, y2,
+               x1, y2, x1, y2 - r, x1, y2 - r, x1, y1 + r, x1, y1 + r, x1, y1]
         return self.create_polygon(pts, smooth=True, **kw)
 
     def fit_text(self, text, box, color, bold=True, max_frac=0.5, anchor="center"):
@@ -936,12 +938,19 @@ class PanelWindow(tk.Toplevel):
         self.tabs = tk.Frame(self, bg="#14181C")
         self.tabs.pack(fill="x")
         self.editbar = tk.Frame(self, bg="#263238")
-        for text, cmd in (("＋部品", self.add_part), ("設定", self.edit_selected), ("複製", self.duplicate),
-                          ("前面へ", self.bring_front), ("削除", self.delete_selected),
-                          ("画面追加", self.add_screen), ("画面の管理", self.manage_screens),
-                          ("縦/横", self.toggle_orientation), ("✓ 編集終了", lambda: self.set_edit(False))):
-            tk.Button(self.editbar, text=text, command=cmd, bg="#37474F", fg="white", relief="flat",
-                      font=(FONT, 9), padx=6).pack(side="left", padx=2, pady=3)
+        rows = [tk.Frame(self.editbar, bg="#263238"), tk.Frame(self.editbar, bg="#263238")]
+        for r in rows:
+            r.pack(fill="x")
+        for i, (text, cmd) in enumerate((("＋部品", self.add_part), ("設定", self.edit_selected),
+                                         ("複製", self.duplicate), ("前面へ", self.bring_front),
+                                         ("削除", self.delete_selected), ("画面追加", self.add_screen),
+                                         ("画面の管理", self.manage_screens), ("縦/横", self.toggle_orientation))):
+            tk.Button(rows[i // 5], text=text, command=cmd, bg="#37474F", fg="white", relief="flat",
+                      font=(FONT, 9), padx=6).pack(side="left", padx=2, pady=2)
+        tk.Button(rows[1], text="✓ 編集終了", command=lambda: self.set_edit(False), bg="#00838F", fg="white",
+                  relief="flat", font=(FONT, 9, "bold"), padx=8).pack(side="right", padx=4, pady=2)
+        tk.Label(rows[1], text="ダブルクリックで設定・右下のつまみで大きさ", bg="#263238", fg="#90A4AE",
+                 font=(FONT, 8)).pack(side="left", padx=6)
         self.canvas = PanelCanvas(self, self)
         self.canvas.pack(fill="both", expand=True)
         self.protocol("WM_DELETE_WINDOW", self.close)
