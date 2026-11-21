@@ -171,12 +171,14 @@ def run_steps(app, root):
     step(lambda: app.set_unlocked(True), 300)
 
     def press():
+        plc_log.append("state: unlocked=%s fresh=%s why=%s" % (app.unlocked, app.link.fresh(),
+                                                               app.panel_win.can_operate()))
         click_part("運転", hold=0.2)
     step(press, 1500)
     step(lambda: check("モーメンタリ ON→OFF がPLCに届く",
                        "bit 90 2000 1" in plc_log and plc_log[-1] != "bit 90 2000 1" and
                        any(l == "bit 90 2000 0" for l in plc_log),
-                       ", ".join(l for l in plc_log if l.startswith("bit 90 2000"))))
+                       ", ".join(l for l in plc_log if l.startswith(("bit 90 2000", "msg:", "state:")))))
 
     # 5. 数値入力（ダイアログの代わりに直接）
     def number():

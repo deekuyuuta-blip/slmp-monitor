@@ -912,7 +912,7 @@ class PanelWindow(tk.Toplevel):
         self.screen_index = 0
         self.changed = False
         p = app.panel
-        self.geometry("%dx%d" % ((760, 520) if p.landscape else (440, 820)))
+        self.geometry("%dx%d" % ((760, 520) if p.landscape else (440, 760)))
         self.configure(bg="#14181C")
 
         top = tk.Frame(self, bg="#14181C")
@@ -1202,7 +1202,7 @@ class PanelWindow(tk.Toplevel):
     def toggle_orientation(self):
         self.app.panel.set_landscape(not self.app.panel.landscape)
         self.changed = True
-        self.geometry("%dx%d" % ((760, 520) if self.app.panel.landscape else (440, 820)))
+        self.geometry("%dx%d" % ((760, 520) if self.app.panel.landscape else (440, 760)))
         self.canvas.redraw()
 
     # ---- 書き出し・読み込み
@@ -1260,7 +1260,7 @@ class PanelWindow(tk.Toplevel):
         self.app.panel = p
         self.save()
         self.screen_index = 0
-        self.geometry("%dx%d" % ((760, 520) if p.landscape else (440, 820)))
+        self.geometry("%dx%d" % ((760, 520) if p.landscape else (440, 760)))
         self.rebuild_tabs()
         self.canvas.selected = None
         self.canvas.redraw()
