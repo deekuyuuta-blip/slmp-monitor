@@ -281,6 +281,27 @@ def run_steps(app, root):
         w.rebuild_tabs()
     step(many_tabs, 800)
 
+    # 8c. PC用の大きいキャンバス（1280×720）
+    def custom():
+        w = app.panel_win
+        keep = app.panel
+        p = pn.Panel.from_json(keep.to_json())
+        p.custom_w, p.custom_h = 1280, 720
+        js = p.to_json()
+        q = pn.Panel.from_json(js)
+        check("大きいキャンバスのJSON往復", q.is_custom() and q.width() == 1280 and q.to_json() == js)
+        app.panel = q
+        w.fit_orientation()
+        w.rebuild_tabs()
+        w.canvas.redraw()
+        w.update()
+        grab(w, "10_custom_canvas.png")
+        check("大きいキャンバスで描ける", w.canvas.scale > 0)
+        app.panel = keep
+        w.fit_orientation()
+        w.rebuild_tabs()
+    step(custom, 800)
+
     # 9. 押したまま通信停止 → OFFが届いてからロック
     def stop_while_pressed():
         c = app.panel_win.canvas

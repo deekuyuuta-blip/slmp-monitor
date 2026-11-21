@@ -17,7 +17,7 @@ from slmpcore import (Device, MonitorItem, DeviceMemory, PlcClient, FORMATS, FOR
 import panel as pn
 
 APP_NAME = "SLMPモニタ"
-VERSION = "1.2"
+VERSION = "1.3"
 AUTO_LOCK_SEC = 120
 FONT = "Meiryo UI" if sys.platform == "win32" else "TkDefaultFont"
 
@@ -967,10 +967,7 @@ class PanelWindow(tk.Toplevel):
         self.screen_index = 0
         self.changed = False
         p = app.panel
-        if p.landscape:
-            place_window(self, app.store, "panel_l", 760, 520, 480, 320)
-        else:
-            place_window(self, app.store, "panel_p", 440, 760, 300, 420)
+        self.fit_orientation()
         self.configure(bg="#14181C")
 
         top = tk.Frame(self, bg="#14181C")
@@ -1289,7 +1286,10 @@ class PanelWindow(tk.Toplevel):
         self.canvas.redraw()
 
     def toggle_orientation(self):
-        remember_window(self, self.app.store, "panel_l" if self.app.panel.landscape else "panel_p")
+        if self.app.panel.is_custom():
+            self.message("PC用の大きい画面（%d×%d）は縦横を切り替えられません" % (self.app.panel.width(), self.app.panel.height()))
+            return
+        remember_window(self, self.app.store, self.orient_key())
         self.app.panel.set_landscape(not self.app.panel.landscape)
         self.changed = True
         self.fit_orientation()
@@ -1355,15 +1355,24 @@ class PanelWindow(tk.Toplevel):
         self.canvas.selected = None
         self.canvas.redraw()
 
+    def orient_key(self):
+        p = self.app.panel
+        return "panel_c" if p.is_custom() else ("panel_l" if p.landscape else "panel_p")
+
     def fit_orientation(self):
         """縦横に合った大きさにする（前回その向きで使った大きさがあればそれ）"""
-        if self.app.panel.landscape:
+        p = self.app.panel
+        if p.is_custom():
+            w = 1280
+            h = int(w * p.height() / p.width()) + 90
+            place_window(self, self.app.store, "panel_c", w, h, 640, 400)
+        elif self.app.panel.landscape:
             place_window(self, self.app.store, "panel_l", 760, 520, 480, 320)
         else:
             place_window(self, self.app.store, "panel_p", 440, 760, 300, 420)
 
     def close(self):
-        remember_window(self, self.app.store, "panel_l" if self.app.panel.landscape else "panel_p")
+        remember_window(self, self.app.store, self.orient_key())
         self.app.store.save()
         self.canvas.release_momentary()
         if self.changed:

@@ -299,11 +299,21 @@ class Panel:
     def __init__(self):
         self.landscape = False
         self.screens = []
+        # PC用の大きいキャンバス（例 1280×720）。0ならスマホと同じ大きさ
+        self.custom_w = 0
+        self.custom_h = 0
+
+    def is_custom(self):
+        return self.custom_w > 0 and self.custom_h > 0
 
     def width(self):
+        if self.is_custom():
+            return self.custom_w
         return PORTRAIT_H if self.landscape else PORTRAIT_W
 
     def height(self):
+        if self.is_custom():
+            return self.custom_h
         return PORTRAIT_W if self.landscape else PORTRAIT_H
 
     def clamp(self, p):
@@ -313,7 +323,7 @@ class Panel:
         p.y = min(max(p.y, 0), self.height() - p.h)
 
     def set_landscape(self, l):
-        if l == self.landscape:
+        if l == self.landscape or self.is_custom():
             return
         sx = (PORTRAIT_H if l else PORTRAIT_W) / self.width()
         sy = (PORTRAIT_W if l else PORTRAIT_H) / self.height()
@@ -334,15 +344,23 @@ class Panel:
         return out
 
     def to_json(self):
-        return json.dumps({"version": 1, "landscape": self.landscape,
-                           "screens": [{"name": s.name, "parts": [p.to_dict() for p in s.parts]}
-                                       for s in self.screens]}, ensure_ascii=False, indent=1)
+        o = {"version": 1, "landscape": self.landscape}
+        if self.is_custom():
+            o["width"], o["height"] = self.custom_w, self.custom_h   # PC用（スマホ版は未対応）
+        o["screens"] = [{"name": s.name, "parts": [p.to_dict() for p in s.parts]} for s in self.screens]
+        return json.dumps(o, ensure_ascii=False, indent=1)
 
     @staticmethod
     def from_json(text):
         o = json.loads(text)
         panel = Panel()
         panel.landscape = bool(o.get("landscape", False))
+        try:
+            w, h = int(o.get("width", 0)), int(o.get("height", 0))
+            if 200 <= w <= 4000 and 200 <= h <= 4000:
+                panel.custom_w, panel.custom_h = w, h
+        except (TypeError, ValueError):
+            pass
         for i, so in enumerate(o["screens"]):
             s = Screen(str(so.get("name", "画面%d" % (i + 1))))
             for po in so.get("parts") or []:

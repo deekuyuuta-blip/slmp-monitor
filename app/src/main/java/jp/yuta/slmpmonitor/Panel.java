@@ -478,6 +478,11 @@ public final class Panel {
     /** 不正な部分は読み飛ばす。全体が読めなければ例外 */
     public static Panel fromJson(String json) throws JSONException {
         JSONObject o = new JSONObject(json);
+        if (o.has("width") || o.has("height")) {
+            // PC版の大きい画面（例 1280×720）はスマホに収まらないので読み込まない
+            throw new JSONException("PC用（" + o.optInt("width") + "×" + o.optInt("height")
+                    + "）の操作画面です。スマホ用のファイルを選んでください");
+        }
         Panel panel = new Panel();
         panel.landscape = o.optBoolean("landscape", false);
         JSONArray sa = o.getJSONArray("screens");
