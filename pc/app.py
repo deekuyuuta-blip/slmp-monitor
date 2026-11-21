@@ -17,7 +17,7 @@ from slmpcore import (Device, MonitorItem, DeviceMemory, PlcClient, FORMATS, FOR
 import panel as pn
 
 APP_NAME = "SLMPモニタ"
-VERSION = "1.5"
+VERSION = "1.6"
 AUTO_LOCK_SEC = 120
 FONT = "Meiryo UI" if sys.platform == "win32" else "TkDefaultFont"
 
@@ -74,6 +74,15 @@ def argb(c):
 def contrast(c):
     r, g, b = (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF
     return "#000000" if 0.299 * r + 0.587 * g + 0.114 * b > 160 else "#FFFFFF"
+
+
+def mix(a, b, t):
+    """色 a と b を t（0〜1、b の割合）で混ぜる"""
+    out = 0xFF000000
+    for sh in (16, 8, 0):
+        ca, cb = (a >> sh) & 0xFF, (b >> sh) & 0xFF
+        out |= int(ca + (cb - ca) * t) << sh
+    return out
 
 
 def darker(c):
@@ -658,16 +667,24 @@ class PanelCanvas(tk.Canvas):
         stale = not fresh and not self.edit
         t = p.type
         if t == "LAMP":
+            # ランプは「表示窓」：影なし・角を小さく・点灯色の枠。消灯は黒っぽい窓（ボタンと見分けやすく）
             on = p.is_on(mem)
-            col = p.onColor if on else p.offColor
-            self.round_rect(x1, y1, x2, y2, rad, fill=argb(col), outline="")
+            lr = rad * 0.5
+            lw = max(2, 2 * s)
             if on:
-                self.round_rect(x1 + 3 * s, y1 + 3 * s, x2 - 3 * s, y2 - 3 * s, rad, fill="",
-                                outline="#9FBF9F" if col == pn.COLORS[0] else "#DDDDDD", width=max(2, 2 * s))
+                col = p.onColor
+                self.round_rect(x1, y1, x2, y2, lr, fill=argb(col), outline=argb(mix(col, 0xFFFFFFFF, 0.45)), width=lw)
+                self.round_rect(x1 + 4 * s, y1 + 4 * s, x2 - 4 * s, y2 - 4 * s, lr, fill="",
+                                outline=argb(mix(col, 0xFFFFFFFF, 0.3)), width=max(1, 1 * s))
+                tcol = contrast(col)
+            else:
+                col = 0xFF15191D if p.offColor == pn.COLORS[8] else p.offColor
+                self.round_rect(x1, y1, x2, y2, lr, fill=argb(col), outline=argb(mix(p.onColor, col, 0.45)), width=lw)
+                tcol = "#90A4AE" if col == 0xFF15191D else contrast(col)
             txt = (p.onText or p.label) if on else (p.offText or p.label)
-            self.fit_text(txt, (x1, y1 + self.dev_tag(p, x1, y1, x2, y2, col), x2, y2), contrast(col), True, 0.42)
+            self.fit_text(txt, (x1, y1 + self.dev_tag(p, x1, y1, x2, y2, col), x2, y2), tcol, True, 0.42)
             if stale:
-                self.round_rect(x1, y1, x2, y2, rad, fill="#202428", outline="", stipple="gray50")
+                self.round_rect(x1, y1, x2, y2, lr, fill="#202428", outline="", stipple="gray50")
         elif t in ("BUTTON", "SWITCH"):
             on = p.is_on(mem) if t == "BUTTON" else False
             down = (p is self.pressed and self.pressed_inside) or p is self.momentary_on

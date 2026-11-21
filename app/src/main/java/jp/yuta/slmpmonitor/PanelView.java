@@ -219,21 +219,39 @@ public class PanelView extends View {
         boolean stale = !fresh && !editMode;
         switch (p.type) {
             case LAMP: {
+                // ランプは「表示窓」：影なし・角を小さく・点灯色の枠。消灯は黒っぽい窓（ボタンと見分けやすく）
                 boolean on = p.isOn(mem);
-                fill.setColor(on ? p.onColor : p.offColor);
-                c.drawRoundRect(r, rad, rad, fill);
-                if (on) {   // 点灯時の光り
-                    stroke.setColor(0x66FFFFFF);
-                    stroke.setStrokeWidth(Math.max(2f, 2 * scale));
-                    RectF in = new RectF(r);
-                    in.inset(3 * scale, 3 * scale);
-                    c.drawRoundRect(in, rad, rad, stroke);
+                float lr = rad * 0.5f;
+                int col;
+                stroke.setStrokeWidth(Math.max(2f, 2 * scale));
+                RectF in = new RectF(r);
+                in.inset(stroke.getStrokeWidth() / 2, stroke.getStrokeWidth() / 2);
+                int tcol;
+                if (on) {
+                    col = p.onColor;
+                    fill.setColor(col);
+                    c.drawRoundRect(r, lr, lr, fill);
+                    stroke.setColor(mix(col, 0xFFFFFFFF, 0.45f));
+                    c.drawRoundRect(in, lr, lr, stroke);
+                    RectF in2 = new RectF(r);
+                    in2.inset(4 * scale, 4 * scale);
+                    stroke.setStrokeWidth(Math.max(1f, scale));
+                    stroke.setColor(mix(col, 0xFFFFFFFF, 0.3f));
+                    c.drawRoundRect(in2, lr, lr, stroke);
+                    tcol = contrast(col);
+                } else {
+                    col = p.offColor == 0xFF37474F ? 0xFF15191D : p.offColor;
+                    fill.setColor(col);
+                    c.drawRoundRect(r, lr, lr, fill);
+                    stroke.setColor(mix(p.onColor, col, 0.45f));
+                    c.drawRoundRect(in, lr, lr, stroke);
+                    tcol = col == 0xFF15191D ? 0xFF90A4AE : contrast(col);
                 }
                 String t = on ? (p.onText.isEmpty() ? p.label : p.onText) : (p.offText.isEmpty() ? p.label : p.offText);
                 RectF lb = new RectF(r);
-                lb.top = drawDeviceTag(c, p, r, on ? p.onColor : p.offColor);
-                drawFitText(c, t, lb, contrast(on ? p.onColor : p.offColor), true, 0.42f);
-                if (stale) dim(c, rad);
+                lb.top = drawDeviceTag(c, p, r, col);
+                drawFitText(c, t, lb, tcol, true, 0.42f);
+                if (stale) dim(c, lr);
                 break;
             }
             case BUTTON:
@@ -374,6 +392,15 @@ public class PanelView extends View {
             c.drawText(l, x, y, text);
             y += lineH;
         }
+    }
+
+    private static int mix(int a, int b, float t) {
+        int out = 0xFF000000;
+        for (int sh = 16; sh >= 0; sh -= 8) {
+            int ca = (a >> sh) & 0xFF, cb = (b >> sh) & 0xFF;
+            out |= ((int) (ca + (cb - ca) * t)) << sh;
+        }
+        return out;
     }
 
     private static int contrast(int bg) {
