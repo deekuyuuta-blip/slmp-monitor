@@ -945,12 +945,12 @@ class PanelWindow(tk.Toplevel):
                                          ("複製", self.duplicate), ("前面へ", self.bring_front),
                                          ("削除", self.delete_selected), ("画面追加", self.add_screen),
                                          ("画面の管理", self.manage_screens), ("縦/横", self.toggle_orientation))):
-            tk.Button(rows[i // 5], text=text, command=cmd, bg="#37474F", fg="white", relief="flat",
+            tk.Button(rows[0 if i < 4 else 1], text=text, command=cmd, bg="#37474F", fg="white", relief="flat",
                       font=(FONT, 9), padx=6).pack(side="left", padx=2, pady=2)
         tk.Button(rows[1], text="✓ 編集終了", command=lambda: self.set_edit(False), bg="#00838F", fg="white",
                   relief="flat", font=(FONT, 9, "bold"), padx=8).pack(side="right", padx=4, pady=2)
-        tk.Label(rows[1], text="ダブルクリックで設定・右下のつまみで大きさ", bg="#263238", fg="#90A4AE",
-                 font=(FONT, 8)).pack(side="left", padx=6)
+        tk.Label(rows[0], text="ダブルクリックで設定\n右下のつまみで大きさ", bg="#263238", fg="#90A4AE",
+                 font=(FONT, 8), justify="left").pack(side="left", padx=6)
         self.canvas = PanelCanvas(self, self)
         self.canvas.pack(fill="both", expand=True)
         self.protocol("WM_DELETE_WINDOW", self.close)
