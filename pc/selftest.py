@@ -148,7 +148,8 @@ def run_steps(app, root):
             while time.time() - t0 < hold:
                 root.update()
                 time.sleep(0.02)
-        c.event_generate("<ButtonRelease-1>", x=x, y=y)
+        # 本物のマウスと同じく「ボタン1が押されている」状態つきで離す（ないとTkが押したままと扱う）
+        c.event_generate("<ButtonRelease-1>", x=x, y=y, state=0x100)
 
     # 1. 通信開始（パスワードは保存済みの設定）
     step(lambda: app.start_comm(root), 2500)
